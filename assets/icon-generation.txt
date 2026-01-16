@@ -1,0 +1,33 @@
+ICON GENERATION INSTRUCTIONS
+============================
+
+The icon.svg file is the source file for all platform icons.
+
+AUTOMATED GENERATION:
+electron-builder will automatically generate platform-specific icons during the build process.
+
+MANUAL GENERATION:
+If you need to manually generate icons, use one of these methods:
+
+1. Using a web tool:
+   - Upload icon.svg to https://cloudconvert.com/svg-to-png
+   - Export as 512x512 PNG and save as icon.png
+   - Use that PNG for further conversions
+
+2. Using Inkscape (command line):
+   inkscape icon.svg --export-type=png --export-filename=icon.png -w 512 -h 512
+
+3. Using ImageMagick:
+   convert -background none -density 300 icon.svg -resize 512x512 icon.png
+
+4. Using Node.js (sharp library):
+   npm install sharp
+   const sharp = require('sharp');
+   sharp('icon.svg').resize(512, 512).png().toFile('icon.png');
+
+PLATFORM-SPECIFIC FORMATS:
+- Windows: electron-builder converts PNG to ICO automatically
+- macOS: electron-builder converts PNG to ICNS automatically  
+- Linux: Uses PNG directly
+
+For development, the icons will be generated automatically during the build process.
