@@ -17,6 +17,17 @@ const store = new Store<{ config: AppConfig; isFirstLaunch: boolean }>({
 
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
+let lastRequestedWindowSize = { width: 240, height: 40 };
+let isDragGuardActive = false;
+let dragGuardTimeout: NodeJS.Timeout | null = null;
+
+const WINDOW_LIMITS = {
+  MIN_WIDTH: 160,
+  MAX_WIDTH: 420,
+  MIN_HEIGHT: 44,
+  MAX_HEIGHT: 160,
+  EDGE_MARGIN: 12,
+};
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -27,10 +38,11 @@ function createWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({
     width: 240,
     height: 40,
+    useContentSize: true,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    resizable: false,
+    resizable: true,
     skipTaskbar: true,
     x: Math.floor((screenWidth - 240) / 2),
     y: 20,
@@ -42,6 +54,7 @@ function createWindow(): BrowserWindow {
     icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
   });
+  lastRequestedWindowSize = { width: 240, height: 40 };
 
   // Keep window within screen bounds when moved
   mainWindow.on('will-move', (event, newBounds) => {
@@ -71,7 +84,11 @@ function createWindow(): BrowserWindow {
     if (!config.startMinimized) {
       // Resize for setup if needed
       if (store.get('isFirstLaunch') || !config.apiKey) {
-        mainWindow?.setSize(400, 500, false);
+        mainWindow?.setContentSize(400, 500, false);
+        lastRequestedWindowSize = { width: 400, height: 500 };
+      } else {
+        mainWindow?.setContentSize(240, 40, false);
+        lastRequestedWindowSize = { width: 240, height: 40 };
       }
       mainWindow?.show();
     }
@@ -81,6 +98,22 @@ function createWindow(): BrowserWindow {
     if (!isQuitting) {
       event.preventDefault();
       mainWindow?.hide();
+    }
+  });
+
+  mainWindow.on('resize', () => {
+    if (!mainWindow || isDragGuardActive) {
+      return;
+    }
+    const { width, height } = mainWindow.getContentBounds();
+    const widthDiff = Math.abs(width - lastRequestedWindowSize.width);
+    const heightDiff = Math.abs(height - lastRequestedWindowSize.height);
+    if (widthDiff > 2 || heightDiff > 2) {
+      mainWindow.setContentSize(
+        lastRequestedWindowSize.width,
+        lastRequestedWindowSize.height,
+        false
+      );
     }
   });
 
@@ -224,7 +257,10 @@ function setupIPC(): void {
     // Don't hide completely - just minimize to chip (handled by renderer)
     // Keep window visible but collapsed
     if (mainWindow) {
-      mainWindow.setSize(200, 10, true);
+      const width = 200;
+      const height = 10;
+      mainWindow.setContentSize(width, height, true);
+      lastRequestedWindowSize = { width, height };
     }
   });
 
@@ -233,16 +269,73 @@ function setupIPC(): void {
     mainWindow?.focus();
   });
 
+  ipcMain.handle(IPC_CHANNELS.HIDE_MAIN_WINDOW, () => {
+    mainWindow?.hide();
+  });
+
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => {
     isQuitting = true;
     app.quit();
   });
 
+  ipcMain.handle(IPC_CHANNELS.SET_DRAG_STATE, (_, { active }: { active: boolean }) => {
+    if (active) {
+      isDragGuardActive = true;
+      if (dragGuardTimeout) {
+        clearTimeout(dragGuardTimeout);
+        dragGuardTimeout = null;
+      }
+    } else {
+      if (dragGuardTimeout) {
+        clearTimeout(dragGuardTimeout);
+      }
+      dragGuardTimeout = setTimeout(() => {
+        isDragGuardActive = false;
+        dragGuardTimeout = null;
+        if (mainWindow) {
+          mainWindow.setContentSize(
+            lastRequestedWindowSize.width,
+            lastRequestedWindowSize.height,
+            false
+          );
+        }
+      }, 180);
+    }
+  });
+
   // Window resize handler
   ipcMain.handle(IPC_CHANNELS.RESIZE_WINDOW, (_, { width, height }: { width: number; height: number }) => {
-    if (mainWindow) {
-      mainWindow.setSize(width, height, true); // animate
+    if (!mainWindow || isDragGuardActive) {
+      return;
     }
+
+    const currentBounds = mainWindow.getContentBounds();
+    const display = screen.getDisplayNearestPoint({ x: currentBounds.x, y: currentBounds.y });
+    const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+
+    const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+    const maxWidth = Math.max(
+      WINDOW_LIMITS.MIN_WIDTH,
+      Math.min(WINDOW_LIMITS.MAX_WIDTH, screenWidth - WINDOW_LIMITS.EDGE_MARGIN)
+    );
+    const maxHeight = Math.max(
+      WINDOW_LIMITS.MIN_HEIGHT,
+      Math.min(WINDOW_LIMITS.MAX_HEIGHT, screenHeight - WINDOW_LIMITS.EDGE_MARGIN)
+    );
+
+    const targetWidth = clamp(Math.round(width), WINDOW_LIMITS.MIN_WIDTH, maxWidth);
+    const targetHeight = clamp(Math.round(height), WINDOW_LIMITS.MIN_HEIGHT, maxHeight);
+
+    if (
+      Math.abs(targetWidth - lastRequestedWindowSize.width) < 2 &&
+      Math.abs(targetHeight - lastRequestedWindowSize.height) < 2
+    ) {
+      return;
+    }
+
+    lastRequestedWindowSize = { width: targetWidth, height: targetHeight };
+    mainWindow.setContentSize(targetWidth, targetHeight, true);
   });
 
   // Set always on top handler

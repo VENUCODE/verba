@@ -68,6 +68,12 @@ export const IPC_CHANNELS = {
   QUIT_APP: 'window:quit',
   RESIZE_WINDOW: 'window:resize',
   SET_ALWAYS_ON_TOP: 'window:setAlwaysOnTop',
+  GET_WINDOW_BOUNDS: 'window:getBounds',
+  OPEN_PANEL_WINDOW: 'window:openPanel',
+  CLOSE_PANEL_WINDOW: 'window:closePanel',
+  PANEL_SET_TAB: 'window:panelSetTab',
+  HIDE_MAIN_WINDOW: 'window:hideMain',
+  SET_DRAG_STATE: 'window:setDragState',
 } as const;
 
 

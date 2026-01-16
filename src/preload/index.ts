@@ -15,7 +15,13 @@ const IPC_CHANNELS = {
   QUIT_APP: 'window:quit',
   RESIZE_WINDOW: 'window:resize',
   SET_ALWAYS_ON_TOP: 'window:setAlwaysOnTop',
+  GET_WINDOW_BOUNDS: 'window:getBounds',
   CHECK_ACTIVE_INPUT: 'system:checkActiveInput',
+  OPEN_PANEL_WINDOW: 'window:openPanel',
+  CLOSE_PANEL_WINDOW: 'window:closePanel',
+  PANEL_SET_TAB: 'window:panelSetTab',
+  HIDE_MAIN_WINDOW: 'window:hideMain',
+  SET_DRAG_STATE: 'window:setDragState',
 } as const;
 
 // Type for AppConfig (inline to avoid import)
@@ -59,8 +65,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_CHANNELS.RESIZE_WINDOW, { width, height }),
   setAlwaysOnTop: (flag: boolean): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.SET_ALWAYS_ON_TOP, flag),
+  getWindowBounds: (): Promise<any> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_WINDOW_BOUNDS),
   checkActiveInput: (): Promise<boolean> =>
     ipcRenderer.invoke(IPC_CHANNELS.CHECK_ACTIVE_INPUT),
+  openPanelWindow: (tab: 'settings' | 'history'): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPEN_PANEL_WINDOW, { tab }),
+  closePanelWindow: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CLOSE_PANEL_WINDOW),
+  hideMainWindow: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.HIDE_MAIN_WINDOW),
+  setDragState: (active: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SET_DRAG_STATE, { active }),
 
   // Event listeners
   onHotkeyTriggered: (callback: () => void) => {
@@ -75,6 +91,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(IPC_CHANNELS.TRANSCRIPTION_CHUNK, handler);
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.TRANSCRIPTION_CHUNK, handler);
+    };
+  },
+  onPanelTabChange: (callback: (tab: 'settings' | 'history') => void) => {
+    const handler = (_: any, tab: 'settings' | 'history') => callback(tab);
+    ipcRenderer.on(IPC_CHANNELS.PANEL_SET_TAB, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.PANEL_SET_TAB, handler);
     };
   },
 });
@@ -93,9 +116,15 @@ export interface ElectronAPI {
   quitApp: () => Promise<void>;
   resizeWindow: (width: number, height: number) => Promise<void>;
   setAlwaysOnTop: (flag: boolean) => Promise<void>;
+  getWindowBounds: () => Promise<any>;
   checkActiveInput: () => Promise<boolean>;
+  openPanelWindow: (tab: 'settings' | 'history') => Promise<void>;
+  closePanelWindow: () => Promise<void>;
+  hideMainWindow: () => Promise<void>;
+  setDragState: (active: boolean) => Promise<void>;
   onHotkeyTriggered: (callback: () => void) => () => void;
   onTranscriptionChunk: (callback: (chunk: string) => void) => () => void;
+  onPanelTabChange: (callback: (tab: 'settings' | 'history') => void) => () => void;
 }
 
 declare global {

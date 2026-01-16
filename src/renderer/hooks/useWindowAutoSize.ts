@@ -36,12 +36,14 @@ export function useWindowAutoSize(
     padding = 0,
     enabled = true,
     changeThreshold = 2,
+    dragSettleDelayMs = 160,
   } = options;
 
   const lastAppliedSizeRef = useRef({ width: 0, height: 0 });
   const pendingSizeRef = useRef<{ width: number; height: number } | null>(null);
   const isDraggingRef = useRef(false);
   const debounceTimeoutRef = useRef<number>();
+  const dragSettleTimeoutRef = useRef<number>();
 
   const applyResize = useCallback(
     (rawWidth: number, rawHeight: number) => {
@@ -115,32 +117,38 @@ export function useWindowAutoSize(
       if (debounceTimeoutRef.current) {
         window.clearTimeout(debounceTimeoutRef.current);
       }
+      if (dragSettleTimeoutRef.current) {
+        window.clearTimeout(dragSettleTimeoutRef.current);
+      }
     };
   }, [enabled, scheduleResize, targetRef]);
 
   const notifyDragStart = useCallback(() => {
+    if (dragSettleTimeoutRef.current) {
+      window.clearTimeout(dragSettleTimeoutRef.current);
+      dragSettleTimeoutRef.current = undefined;
+    }
     isDraggingRef.current = true;
   }, []);
 
   const notifyDragEnd = useCallback(() => {
     if (!isDraggingRef.current) return;
     isDraggingRef.current = false;
-
-    // Discard pending size - it may be corrupted by drag expansion
-    // Instead, re-measure after a delay to get the correct size
+    const pendingSize = pendingSizeRef.current;
     pendingSizeRef.current = null;
-
-    // Wait for window to settle, then re-measure
-    setTimeout(() => {
-      if (targetRef.current && enabled) {
+    if (dragSettleTimeoutRef.current) {
+      window.clearTimeout(dragSettleTimeoutRef.current);
+    }
+    dragSettleTimeoutRef.current = window.setTimeout(() => {
+      if (pendingSize) {
+        scheduleResize(pendingSize.width, pendingSize.height);
+      } else if (targetRef.current && enabled) {
         const { offsetWidth, offsetHeight } = targetRef.current;
-        // Only apply if size is reasonable (not expanded)
-        if (offsetWidth <= (maxWidth || 500) && offsetHeight <= (maxHeight || 200)) {
-          applyResize(offsetWidth, offsetHeight);
-        }
+        scheduleResize(offsetWidth, offsetHeight);
       }
-    }, 150);
-  }, [applyResize, enabled, maxWidth, maxHeight, targetRef]);
+      dragSettleTimeoutRef.current = undefined;
+    }, dragSettleDelayMs);
+  }, [dragSettleDelayMs, enabled, scheduleResize, targetRef]);
 
   const forceResize = useCallback(() => {
     if (!targetRef.current || !enabled) return;

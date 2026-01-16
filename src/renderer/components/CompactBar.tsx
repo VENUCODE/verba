@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useConfigStore } from '../store/configStore';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import VerticalBarsVisualizer from './VerticalBarsVisualizer';
@@ -9,12 +9,20 @@ interface CompactBarProps {
   onExpand?: () => void;
   isCollapsed?: boolean;
   onInteraction?: () => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }
 
-function CompactBar({ onNavigate, onExpand, isCollapsed = false, onInteraction }: CompactBarProps) {
+function CompactBar({
+  onNavigate,
+  onExpand,
+  isCollapsed = false,
+  onInteraction,
+  onDragStart,
+  onDragEnd,
+}: CompactBarProps) {
   const { config, status, setStatus, setError, addToHistory, error } = useConfigStore();
   const [showIconsDuringRecording, setShowIconsDuringRecording] = useState(false);
-  const barRef = useRef<HTMLDivElement>(null);
 
   const {
     isRecording,
@@ -188,25 +196,6 @@ function CompactBar({ onNavigate, onExpand, isCollapsed = false, onInteraction }
     }
   }, [onInteraction]);
 
-  // Resize window to fit content dynamically
-  useEffect(() => {
-    if (isCollapsed) return;
-    
-    const resizeToContent = () => {
-      if (barRef.current) {
-        // Use offsetWidth which includes padding and borders
-        const contentWidth = barRef.current.offsetWidth;
-        // Add extra padding for window borders and rounding - reduce minimum width
-        const targetWidth = Math.max(120, contentWidth + 8);
-        window.electronAPI.resizeWindow(targetWidth, 40);
-      }
-    };
-
-    // Resize after a short delay to ensure DOM is updated
-    const timeoutId = setTimeout(resizeToContent, 100);
-    return () => clearTimeout(timeoutId);
-  }, [isCollapsed, status, isRecording, isPaused, showIconsDuringRecording]);
-
   if (isCollapsed) {
     return (
       <div 
@@ -218,6 +207,14 @@ function CompactBar({ onNavigate, onExpand, isCollapsed = false, onInteraction }
         }}
         onClick={() => {
           onInteraction?.();
+        }}
+        onMouseDown={() => {
+          onDragStart?.();
+          const handleMouseUp = () => {
+            onDragEnd?.();
+            window.removeEventListener('mouseup', handleMouseUp);
+          };
+          window.addEventListener('mouseup', handleMouseUp);
         }}
         title="Click to expand"
       >
@@ -238,7 +235,6 @@ function CompactBar({ onNavigate, onExpand, isCollapsed = false, onInteraction }
     <div className="flex flex-col h-full bg-black rounded-lg shadow-xl border border-white/10 overflow-visible">
       {/* Main Bar */}
       <div 
-        ref={barRef}
         className="flex items-center gap-2 px-4 py-1.5 h-10 overflow-visible w-fit"
         onClick={(e) => {
           // Show icons when clicking on bar during recording/paused
@@ -254,6 +250,14 @@ function CompactBar({ onNavigate, onExpand, isCollapsed = false, onInteraction }
           className="flex items-center justify-center w-6 h-6 mr-2 drag-region hover:bg-white/10 rounded transition-colors" 
           style={{ cursor: 'move' }}
           title="Drag to move"
+          onMouseDown={() => {
+            onDragStart?.();
+            const handleMouseUp = () => {
+              onDragEnd?.();
+              window.removeEventListener('mouseup', handleMouseUp);
+            };
+            window.addEventListener('mouseup', handleMouseUp);
+          }}
         >
           <div className="flex gap-1">
             {/* Left column */}
