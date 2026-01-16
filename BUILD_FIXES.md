@@ -1,157 +1,205 @@
-# Build Fixes Applied
+# Compact Floating Voice Transcriber UI
 
-This document summarizes all the fixes applied to make the voice transcriber build and run successfully.
+## Architecture Overview
 
-## Issues Fixed
+```mermaid
+flowchart TB
+    subgraph MainProcess [Main Process]
+        Window[BrowserWindow<br/>Frameless/AlwaysOnTop]
+        Shortcuts[Global Shortcuts]
+        Paste[Paste Handler]
+    end
+    
+    subgraph Renderer [Renderer - Compact Bar]
+        CompactBar[Compact Bar UI]
+        MiniViz[Mini Visualizer]
+        ExpandPanel[Expandable Panel]
+    end
+    
+    Shortcuts -->|Hotkey Event| CompactBar
+    CompactBar -->|Record/Stop| MiniViz
+    CompactBar -->|Expand| ExpandPanel
+    Paste -->|Hide Window| Window
+    Window -->|Restore Focus| Paste
+```
 
-### 1. TypeScript Configuration (`tsconfig.main.json`)
-**Problem**: `rootDir` was set to `src/main` but needed to compile files from `src/shared` and `src/preload`.
+## 1. Fix Global Hotkey Registration
 
-**Solution**: Changed `rootDir` from `"src/main"` to `"src"` to allow compilation of all source files.
+**Problem**: Shortcuts only register when `config.apiKey` exists at startup, but after setup completion, hotkeys don't get registered.
 
-```json
-{
-  "compilerOptions": {
-    "rootDir": "src"  // Changed from "src/main"
+**File**: [src/main/index.ts](src/main/index.ts)
+
+**Changes**:
+
+- Register shortcuts immediately after `completeSetup` IPC call
+- Add logging to debug shortcut registration
+- Ensure shortcuts work even when window is hidden
+```typescript
+// In config:completeSetup handler, add:
+ipcMain.handle('config:completeSetup', () => {
+  store.set('isFirstLaunch', false);
+  const config = store.get('config');
+  if (config.apiKey) {
+    registerShortcuts(config.hotkey, () => {
+      mainWindow?.webContents.send(IPC_CHANNELS.HOTKEY_TRIGGERED);
+    });
   }
-}
+  return true;
+});
 ```
 
-### 2. Vite Import Resolution Issues
-**Problem**: Vite couldn't properly resolve imports from `../shared/` outside its root directory (`src/renderer`).
 
-**Solution**: Created local copies of shared modules in the renderer:
-- Created `src/renderer/constants.ts` with all constants needed by renderer
-- Created `src/renderer/utils/errorHandling.ts` for error handling utilities
-- Updated all renderer imports to use local files instead of shared folder
+## 2. Create Compact Floating Bar Window
 
-### 3. Entry Point Configuration
-**Problem**: Compiled JavaScript created nested `dist/main/main/` structure, but `package.json` pointed to `dist/main/index.js`.
+**File**: [src/main/index.ts](src/main/index.ts)
 
-**Solution**: Updated `package.json` main entry point:
-```json
-{
-  "main": "dist/main/main/index.js"  // Changed from "dist/main/index.js"
-}
-```
+**Window Configuration**:
 
-### 4. Preload Script Module Resolution
-**Problem**: Electron's preload script couldn't resolve the `../shared/types` module without explicit `.js` extension.
-
-**Solution**: Added explicit `.js` extension to imports in preload script:
+- Frameless window with `alwaysOnTop: true`
+- Positioned at top-center of screen
+- Size: ~300x48px (idle) expanding to ~300x200px (settings/history)
+- Transparent background with rounded corners
+- Draggable via custom title bar region
 ```typescript
-// src/preload/index.ts
-import { AppConfig, IPC_CHANNELS } from '../shared/types.js';
+mainWindow = new BrowserWindow({
+  width: 300,
+  height: 48,
+  frame: false,
+  transparent: true,
+  alwaysOnTop: true,
+  resizable: false,
+  skipTaskbar: true,
+  x: Math.floor((screen.width - 300) / 2),
+  y: 20,
+  webPreferences: { /* ... */ }
+});
 ```
 
-TypeScript preserves the `.js` extension in the compiled output, allowing Electron's require() to properly resolve the module.
 
-**Preload Path**: Uses simple relative path since both dev and production use same structure:
+**New IPC Channels** to add:
+
+- `window:expand` - Resize window for settings/history panel
+- `window:collapse` - Return to compact bar size
+- `window:setPosition` - Allow dragging
+
+## 3. Redesign Renderer UI - Compact Bar
+
+**New File**: `src/renderer/components/CompactBar.tsx`
+
+**Layout (idle state)**:
+
+```
+[Drag Handle] [Record Button] [Status/Timer] [Visualizer] [History] [Settings] [Close]
+```
+
+**States**:
+
+- **Idle**: Compact bar with record button, hotkey hint
+- **Recording**: Pulsing record indicator, live visualizer, timer, stop button
+- **Transcribing**: Spinner with progress indication
+- **Expanded**: Panel slides down for settings/history
+
+**File Changes**:
+
+- Refactor [src/renderer/App.tsx](src/renderer/App.tsx) to use new CompactBar
+- Create `src/renderer/components/CompactBar.tsx` - main compact UI
+- Create `src/renderer/components/ExpandablePanel.tsx` - settings/history panel
+- Update [src/renderer/pages/Home.tsx](src/renderer/pages/Home.tsx) - integrate into compact layout
+
+## 4. Fix Paste Functionality (Window Focus Issue)
+
+**Problem**: When paste is triggered, the transcriber window has focus, not the target app.
+
+**File**: [src/main/index.ts](src/main/index.ts)
+
+**Solution**: Hide window before paste, wait for focus to shift, then paste.
+
 ```typescript
-webPreferences: {
-  preload: path.join(__dirname, '../preload/index.js'),
-}
+ipcMain.handle(IPC_CHANNELS.PASTE_TEXT, async (_, text: string) => {
+  clipboard.writeText(text);
+  
+  // Hide window to restore focus to previous app
+  mainWindow?.hide();
+  
+  // Small delay to let OS shift focus
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // Now paste
+  const { keyboard, Key } = await import('@nut-tree-fork/nut-js');
+  // ... paste logic
+  
+  // Optionally show window again after paste
+  mainWindow?.show();
+});
 ```
 
-### 5. TypeScript Type Errors
+## 5. Enhanced Audio Visualizer
 
-#### 5.a NativeImage Type
-**Problem**: Using `nativeImage` as a type instead of the correct `NativeImage` interface.
+**File**: [src/renderer/components/WaveformVisualizer.tsx](src/renderer/components/WaveformVisualizer.tsx)
 
-**Solution**: 
+**Improvements**:
+
+- Fix prop mismatch: component expects `audioStream` but receives `audioLevel`
+- Add gradient colors that respond to audio intensity
+- Add glow/pulse effects during recording
+- Create compact mini-visualizer variant for the bar (5-7 bars)
+- Smoother animations with CSS transitions
+
+**New Visual Effects**:
+
+- Gradient bars from blue to red based on intensity
+- Subtle glow effect around active bars
+- Bounce animation on peaks
+- Smooth decay animation when stopping
+
+## 6. Dynamic Window Resizing
+
+**New IPC handlers** in [src/main/index.ts](src/main/index.ts):
+
 ```typescript
-import { Tray, Menu, nativeImage, NativeImage } from 'electron';
-// Use NativeImage for type annotations
-function createDefaultIcon(): NativeImage { ... }
+ipcMain.handle('window:resize', (_, { width, height }) => {
+  mainWindow?.setSize(width, height, true); // animate
+});
 ```
 
-#### 5.b Browser-Specific Types in Shared Code
-**Problem**: `MediaStreamConstraints` and `MediaRecorderOptions` types used in shared constants not available in Node.js context.
+**Preload additions** in [src/preload/index.ts](src/preload/index.ts):
 
-**Solution**: Removed type annotations from shared constants:
-```typescript
-// Before
-export const AUDIO_CONSTRAINTS: MediaStreamConstraints = { ... };
+- `resizeWindow(width, height)`
+- `setAlwaysOnTop(flag)`
 
-// After
-export const AUDIO_CONSTRAINTS = { ... };
-```
+## Files to Modify
 
-#### 5.c DEFAULT_CONFIG Location
-**Problem**: `DEFAULT_CONFIG` in `types.ts` wasn't exported properly for Vite.
+| File | Changes |
 
-**Solution**: Moved `DEFAULT_CONFIG` directly into `configStore.ts` where it's used.
+|------|---------|
 
-### 6. Unused Imports and Variables
-**Problem**: Linting errors for unused imports.
+| `src/main/index.ts` | Window config, paste fix, resize IPC, shortcut fix |
 
-**Solution**: 
-- Removed unused `Tray` import from `main/index.ts`
-- Removed unused `app` import from `tray.ts`
-- Removed unused `_tray` variable
+| `src/preload/index.ts` | Add resize/position APIs |
 
-## File Structure After Fixes
+| `src/renderer/App.tsx` | Use CompactBar, remove old layout |
 
-```
-voice-transcriber/
-├── dist/
-│   ├── main/
-│   │   ├── main/         # Actual compiled main process
-│   │   │   ├── index.js
-│   │   │   ├── tray.js
-│   │   │   └── ...
-│   │   ├── preload/
-│   │   │   └── index.js
-│   │   └── shared/
-│   │       ├── constants.js
-│   │       ├── types.js
-│   │       └── errorHandling.js
-│   └── renderer/
-│       ├── index.html
-│       └── assets/
-├── src/
-│   ├── main/
-│   ├── preload/
-│   ├── shared/          # Shared types and constants
-│   └── renderer/
-│       ├── constants.ts      # NEW: Renderer-specific constants
-│       └── utils/
-│           └── errorHandling.ts  # NEW: Renderer-specific utilities
-```
+| `src/renderer/components/WaveformVisualizer.tsx` | Fix props, add effects |
 
-## Build Commands
+| `src/renderer/pages/Home.tsx` | Simplify for compact mode |
 
-### Development
-```bash
-npm run dev              # Runs Vite dev server + Electron
-```
+## Files to Create
 
-### Production Build
-```bash
-npm run build            # Builds both renderer and main process
-npm run package:win      # Creates Windows installer + portable
-npm run package:mac      # Creates macOS DMG
-npm run package:linux    # Creates Linux AppImage + DEB
-```
+| File | Purpose |
 
-## Testing Checklist
+|------|---------|
 
-- [x] TypeScript compilation passes
-- [x] Vite build succeeds
-- [x] Electron-builder packaging succeeds
-- [x] Development mode runs without errors
-- [x] window.electronAPI is available in renderer
-- [x] Setup page loads and accepts API key
-- [x] All IPC channels work correctly
+| `src/renderer/components/CompactBar.tsx` | Main floating bar UI |
 
-## Known Warnings (Non-breaking)
+| `src/renderer/components/MiniVisualizer.tsx` | Small inline visualizer |
 
-1. **Vite CJS Node API Deprecated**: This is a Vite warning and doesn't affect functionality
-2. **Module Type Warning**: Adding `"type": "module"` to package.json would require refactoring build scripts
+| `src/renderer/components/ExpandablePanel.tsx` | Settings/history dropdown |
 
-## Future Improvements
+## CSS Updates
 
-1. Consider restructuring to avoid nested `dist/main/main/` folder
-2. Create a shared module that works for both Vite and Node.js
-3. Add ESM support to avoid CJS deprecation warnings
-4. Generate icons programmatically during build
+**File**: [src/renderer/index.css](src/renderer/index.css)
+
+- Add drag region styles (`-webkit-app-region: drag`)
+- Glassmorphism effect for compact bar
+- Glow/pulse animations for visualizer
+- Smooth height transitions for expandable panel

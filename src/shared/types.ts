@@ -66,6 +66,8 @@ export const IPC_CHANNELS = {
   MINIMIZE_TO_TRAY: 'window:minimizeToTray',
   SHOW_WINDOW: 'window:show',
   QUIT_APP: 'window:quit',
+  RESIZE_WINDOW: 'window:resize',
+  SET_ALWAYS_ON_TOP: 'window:setAlwaysOnTop',
 } as const;
 
 

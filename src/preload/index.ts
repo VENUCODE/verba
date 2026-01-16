@@ -13,6 +13,8 @@ const IPC_CHANNELS = {
   MINIMIZE_TO_TRAY: 'window:minimizeToTray',
   SHOW_WINDOW: 'window:show',
   QUIT_APP: 'window:quit',
+  RESIZE_WINDOW: 'window:resize',
+  SET_ALWAYS_ON_TOP: 'window:setAlwaysOnTop',
 } as const;
 
 // Type for AppConfig (inline to avoid import)
@@ -52,6 +54,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimizeToTray: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.MINIMIZE_TO_TRAY),
   showWindow: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.SHOW_WINDOW),
   quitApp: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),
+  resizeWindow: (width: number, height: number): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.RESIZE_WINDOW, { width, height }),
+  setAlwaysOnTop: (flag: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SET_ALWAYS_ON_TOP, flag),
 
   // Event listeners
   onHotkeyTriggered: (callback: () => void) => {
@@ -82,6 +88,8 @@ export interface ElectronAPI {
   minimizeToTray: () => Promise<void>;
   showWindow: () => Promise<void>;
   quitApp: () => Promise<void>;
+  resizeWindow: (width: number, height: number) => Promise<void>;
+  setAlwaysOnTop: (flag: boolean) => Promise<void>;
   onHotkeyTriggered: (callback: () => void) => () => void;
   onTranscriptionChunk: (callback: (chunk: string) => void) => () => void;
 }

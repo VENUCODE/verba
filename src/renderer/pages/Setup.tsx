@@ -33,6 +33,11 @@ function Setup() {
       // Mark setup as complete
       await window.electronAPI.completeSetup();
       setIsFirstLaunch(false);
+      
+      // Resize window to compact size after setup
+      setTimeout(() => {
+        window.electronAPI.resizeWindow(300, 48);
+      }, 100);
     } catch (err: any) {
       setError(err.message || 'Failed to save configuration');
     } finally {
@@ -41,8 +46,8 @@ function Setup() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 to-surface-100 flex items-center justify-center p-6">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+    <div className="h-full bg-gradient-to-br from-primary-50 to-surface-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-6">
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <svg

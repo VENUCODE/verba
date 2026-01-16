@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, clipboard } from 'electron';
+import { app, BrowserWindow, ipcMain, clipboard, screen } from 'electron';
 import * as path from 'path';
 import Store from 'electron-store';
 import { AppConfig, IPC_CHANNELS, DEFAULT_CONFIG } from '../shared/types';
@@ -21,13 +21,19 @@ let isQuitting = false;
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 function createWindow(): BrowserWindow {
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth } = primaryDisplay.workAreaSize;
+  
   mainWindow = new BrowserWindow({
-    width: 400,
-    height: 500,
-    minWidth: 350,
-    minHeight: 450,
-    frame: true,
-    resizable: true,
+    width: 300,
+    height: 48,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    x: Math.floor((screenWidth - 300) / 2),
+    y: 20,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -48,6 +54,10 @@ function createWindow(): BrowserWindow {
   mainWindow.once('ready-to-show', () => {
     const config = store.get('config');
     if (!config.startMinimized) {
+      // Resize for setup if needed
+      if (store.get('isFirstLaunch') || !config.apiKey) {
+        mainWindow?.setSize(400, 500, false);
+      }
       mainWindow?.show();
     }
   });
@@ -91,6 +101,14 @@ function setupIPC(): void {
   // Mark first launch as complete
   ipcMain.handle('config:completeSetup', () => {
     store.set('isFirstLaunch', false);
+    const config = store.get('config');
+    // Register shortcuts after setup completion
+    if (config.apiKey) {
+      unregisterShortcuts();
+      registerShortcuts(config.hotkey, () => {
+        mainWindow?.webContents.send(IPC_CHANNELS.HOTKEY_TRIGGERED);
+      });
+    }
     return true;
   });
 
@@ -139,8 +157,14 @@ function setupIPC(): void {
   ipcMain.handle(IPC_CHANNELS.PASTE_TEXT, async (_, text: string) => {
     try {
       clipboard.writeText(text);
+      
+      // Hide window to restore focus to previous app
+      mainWindow?.hide();
+      
+      // Small delay to let OS shift focus
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       // Simulate Ctrl+V / Cmd+V using nut-js
-      // Note: This requires @nut-tree-fork/nut-js to be installed
       const { keyboard, Key } = await import('@nut-tree-fork/nut-js');
       
       if (process.platform === 'darwin') {
@@ -154,11 +178,19 @@ function setupIPC(): void {
         await keyboard.releaseKey(Key.V);
         await keyboard.releaseKey(Key.LeftControl);
       }
+      
+      // Show window again after paste
+      setTimeout(() => {
+        mainWindow?.show();
+      }, 200);
+      
       return true;
     } catch (error: any) {
       console.error('Failed to paste text:', error);
       // Fallback: at least copy to clipboard
       clipboard.writeText(text);
+      // Show window again even on error
+      mainWindow?.show();
       throw new Error('Failed to paste text automatically. Text copied to clipboard.');
     }
   });
@@ -176,6 +208,18 @@ function setupIPC(): void {
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => {
     isQuitting = true;
     app.quit();
+  });
+
+  // Window resize handler
+  ipcMain.handle(IPC_CHANNELS.RESIZE_WINDOW, (_, { width, height }: { width: number; height: number }) => {
+    if (mainWindow) {
+      mainWindow.setSize(width, height, true); // animate
+    }
+  });
+
+  // Set always on top handler
+  ipcMain.handle(IPC_CHANNELS.SET_ALWAYS_ON_TOP, (_, flag: boolean) => {
+    mainWindow?.setAlwaysOnTop(flag);
   });
 }
 

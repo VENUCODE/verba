@@ -1,16 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useConfigStore } from './store/configStore';
 import Setup from './pages/Setup';
-import Home from './pages/Home';
-import Settings from './pages/Settings';
-import TranscriptionHistory from './components/TranscriptionHistory';
+import CompactBar from './components/CompactBar';
+import ExpandablePanel from './components/ExpandablePanel';
 
 type Page = 'home' | 'settings' | 'history';
 
 function App() {
-  const { isFirstLaunch, loadConfig, config, history, clearHistory, exportHistory } = useConfigStore();
+  // Always call hooks in the same order
+  const { isFirstLaunch, loadConfig, config } = useConfigStore();
+  
   const [isLoading, setIsLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState<Page>('home');
+  const [expandedPanel, setExpandedPanel] = useState<'settings' | 'history' | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -18,14 +19,23 @@ function App() {
       setIsLoading(false);
     };
     init();
-  }, [loadConfig]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+
+  // Resize window for setup screen
+  useEffect(() => {
+    if (isFirstLaunch || !config.apiKey) {
+      window.electronAPI.resizeWindow(400, 500);
+    } else {
+      window.electronAPI.resizeWindow(300, 48);
+    }
+  }, [isFirstLaunch, config.apiKey]);
 
   // Listen for hotkey trigger
   useEffect(() => {
     if (!config.apiKey) return;
 
     const unsubscribe = window.electronAPI.onHotkeyTriggered(() => {
-      // Handled by Home component
       window.dispatchEvent(new CustomEvent('hotkey-triggered'));
     });
 
@@ -34,10 +44,28 @@ function App() {
     };
   }, [config.apiKey]);
 
+  // Handle panel expansion/collapse - use useCallback to ensure consistent hook order
+  const handleExpand = useCallback(() => {
+    if (expandedPanel) {
+      setExpandedPanel(null);
+      window.electronAPI.resizeWindow(300, 48);
+    }
+  }, [expandedPanel]);
+
+  const handlePanelToggle = useCallback((panel: 'settings' | 'history') => {
+    if (expandedPanel === panel) {
+      setExpandedPanel(null);
+      window.electronAPI.resizeWindow(300, 48);
+    } else {
+      setExpandedPanel(panel);
+      window.electronAPI.resizeWindow(300, 200);
+    }
+  }, [expandedPanel]);
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-surface-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+      <div className="flex items-center justify-center h-full bg-transparent">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
       </div>
     );
   }
@@ -48,27 +76,22 @@ function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-surface-50">
-      {currentPage === 'home' && <Home onNavigate={setCurrentPage} />}
-      {currentPage === 'settings' && <Settings onNavigate={setCurrentPage} />}
-      {currentPage === 'history' && (
-        <div className="flex flex-col h-full">
-          <div className="flex items-center gap-4 px-4 py-3 border-b border-surface-200 bg-white">
-            <button
-              onClick={() => setCurrentPage('home')}
-              className="p-2 hover:bg-surface-100 rounded-lg transition-colors"
-            >
-              <svg className="w-5 h-5 text-surface-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-          </div>
-          <TranscriptionHistory
-            history={history}
-            onClear={clearHistory}
-            onExport={exportHistory}
-          />
-        </div>
+    <div className="h-full flex flex-col bg-transparent">
+      <CompactBar
+        onNavigate={(page) => {
+          if (page === 'settings') handlePanelToggle('settings');
+          else if (page === 'history') handlePanelToggle('history');
+        }}
+        onExpand={handleExpand}
+      />
+      {expandedPanel && (
+        <ExpandablePanel
+          type={expandedPanel}
+          onClose={() => {
+            setExpandedPanel(null);
+            window.electronAPI.resizeWindow(300, 48);
+          }}
+        />
       )}
     </div>
   );
