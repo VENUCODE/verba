@@ -18,8 +18,11 @@ function App() {
   
   const [isLoading, setIsLoading] = useState(true);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [expansionPhase, setExpansionPhase] = useState<'collapsed' | 'expanding' | 'expanded'>('expanded');
   const [lastInteraction, setLastInteraction] = useState(Date.now());
+  const [expandedDimensions, setExpandedDimensions] = useState({ width: EXPANDED_BASE_WIDTH, height: EXPANDED_BASE_HEIGHT });
   const contentRef = useRef<HTMLDivElement>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { forceResize, notifyDragStart, notifyDragEnd } = useWindowAutoSize(contentRef, {
     minWidth: EXPANDED_BASE_WIDTH,
@@ -66,29 +69,88 @@ function App() {
   // Track interactions
   useEffect(() => {
     if (viewMode !== 'compact') return;
+
+    const handleExpansion = () => {
+      // Phase 1 (0ms): Set expansion phase and resize window to stored dimensions
+      setExpansionPhase('expanding');
+      void window.electronAPI.resizeWindow(expandedDimensions.width, expandedDimensions.height);
+
+      // Phase 2 (100ms): Trigger content expansion
+      setTimeout(() => {
+        setIsCollapsed(false);
+      }, 100);
+
+      // Phase 3 (300ms): Enable icon animations and resize to content
+      setTimeout(() => {
+        setExpansionPhase('expanded');
+        requestResize();
+      }, 300);
+
+      hoverTimeoutRef.current = null;
+    };
+
     const handleInteraction = () => {
       setLastInteraction(Date.now());
       if (isCollapsed) {
-        setIsCollapsed(false);
-        void window.electronAPI.resizeWindow(EXPANDED_BASE_WIDTH, EXPANDED_BASE_HEIGHT);
-        setTimeout(() => {
-          requestResize();
-        }, 0);
+        // Start hover timer if not already started
+        if (!hoverTimeoutRef.current) {
+          hoverTimeoutRef.current = setTimeout(handleExpansion, 1000); // 1 second delay
+        }
+      }
+    };
+
+    const handleClick = () => {
+      setLastInteraction(Date.now());
+      if (isCollapsed) {
+        // Cancel any pending hover timer and expand immediately on click
+        if (hoverTimeoutRef.current) {
+          clearTimeout(hoverTimeoutRef.current);
+          hoverTimeoutRef.current = null;
+        }
+        handleExpansion();
+      }
+    };
+
+    const handleMouseLeave = () => {
+      // Cancel hover timer if user moves mouse away
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
       }
     };
 
     window.addEventListener('mousemove', handleInteraction);
-    window.addEventListener('click', handleInteraction);
+    window.addEventListener('click', handleClick);
+    window.addEventListener('mouseleave', handleMouseLeave);
     return () => {
       window.removeEventListener('mousemove', handleInteraction);
-      window.removeEventListener('click', handleInteraction);
+      window.removeEventListener('click', handleClick);
+      window.removeEventListener('mouseleave', handleMouseLeave);
+      // Clean up timeout on unmount
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
+      }
     };
-  }, [isCollapsed, requestResize, viewMode]);
+  }, [isCollapsed, requestResize, viewMode, expandedDimensions]);
 
   useEffect(() => {
     if (viewMode !== 'compact') return;
     if (!isCollapsed && config.apiKey && !isFirstLaunch) {
+      // Save dimensions after resize completes
+      const saveCurrentDimensions = async () => {
+        try {
+          const bounds = await window.electronAPI.getWindowBounds();
+          if (bounds && bounds.width > CHIP_WIDTH && bounds.height > CHIP_HEIGHT) {
+            setExpandedDimensions({ width: bounds.width, height: bounds.height });
+          }
+        } catch (error) {
+          console.warn('Failed to save window dimensions:', error);
+        }
+      };
+
       requestResize();
+      setTimeout(saveCurrentDimensions, 200);
     }
   }, [config.apiKey, isCollapsed, isFirstLaunch, requestResize, viewMode]);
 
@@ -114,8 +176,19 @@ function App() {
   }, [config.apiKey]);
 
   // Handle direct collapse (from minimize button)
-  const handleCollapse = useCallback(() => {
+  const handleCollapse = useCallback(async () => {
+    // Save current window dimensions before collapsing
+    try {
+      const bounds = await window.electronAPI.getWindowBounds();
+      if (bounds && bounds.width > CHIP_WIDTH && bounds.height > CHIP_HEIGHT) {
+        setExpandedDimensions({ width: bounds.width, height: bounds.height });
+      }
+    } catch (error) {
+      console.warn('Failed to get window bounds before collapse:', error);
+    }
+
     setIsCollapsed(true);
+    setExpansionPhase('collapsed');
     setLastInteraction(Date.now());
     void window.electronAPI.resizeWindow(CHIP_WIDTH, CHIP_HEIGHT);
   }, []);
@@ -171,6 +244,7 @@ function App() {
           }}
           onExpand={handleCollapse}
           isCollapsed={isCollapsed}
+          expansionPhase={expansionPhase}
           onInteraction={() => setLastInteraction(Date.now())}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}

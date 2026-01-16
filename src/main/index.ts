@@ -384,6 +384,14 @@ function setupIPC(): void {
     }
   });
 
+  // Get window bounds handler
+  ipcMain.handle(IPC_CHANNELS.GET_WINDOW_BOUNDS, () => {
+    if (mainWindow) {
+      return mainWindow.getContentBounds();
+    }
+    return null;
+  });
+
   // Window resize handler
   ipcMain.handle(IPC_CHANNELS.RESIZE_WINDOW, (_, { width, height }: { width: number; height: number }) => {
     if (!mainWindow || isDragGuardActive) {
@@ -416,7 +424,15 @@ function setupIPC(): void {
     }
 
     lastRequestedWindowSize = { width: targetWidth, height: targetHeight };
-    mainWindow.setContentSize(targetWidth, targetHeight, true);
+
+    // Use setBounds instead of setContentSize to prevent system dimension tooltip
+    const windowBounds = mainWindow.getBounds();
+    mainWindow.setBounds({
+      x: windowBounds.x,
+      y: windowBounds.y,
+      width: targetWidth,
+      height: targetHeight
+    }, false);
   });
 
   // Set always on top handler

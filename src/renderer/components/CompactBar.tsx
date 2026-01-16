@@ -9,6 +9,7 @@ interface CompactBarProps {
   onNavigate: (page: 'home' | 'settings' | 'history') => void;
   onExpand?: () => void;
   isCollapsed?: boolean;
+  expansionPhase?: 'collapsed' | 'expanding' | 'expanded';
   onInteraction?: () => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
@@ -18,6 +19,7 @@ function CompactBar({
   onNavigate,
   onExpand,
   isCollapsed = false,
+  expansionPhase = 'expanded',
   onInteraction,
   onDragStart,
   onDragEnd,
@@ -180,7 +182,7 @@ function CompactBar({
         className="drag-region relative flex h-full w-full items-center justify-center rounded-2xl shadow-xl cursor-pointer hover:opacity-95 transition-opacity duration-200 overflow-hidden"
         style={{
           background: 'rgba(16, 20, 35, 0.75)',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
+          border: '1px solid rgba(255, 255, 255, 0)',
           backdropFilter: 'blur(14px)',
         }}
         onClick={() => {
@@ -211,9 +213,9 @@ function CompactBar({
   }
 
   return (
-    <div className="flex w-full flex-col rounded-2xl border border-white/12 bg-black/90 shadow-2xl overflow-hidden">
+    <div className="flex w-full flex-col rounded-2xl border border-blue-400/12 bg-black/90 shadow-2xl overflow-hidden" style={{ minWidth: '216px', minHeight: '56px' }}>
       {/* Main Bar */}
-      <div 
+      <div
         className="flex w-full items-center gap-2 px-4 py-2 min-h-[44px] overflow-visible"
         onClick={(e) => {
           // Show icons when clicking on bar during recording
@@ -317,10 +319,13 @@ function CompactBar({
         {((!isRecording) || showIconsDuringRecording) && (
           <button
             onClick={() => handlePanelToggle('history')}
-            className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
+            className={`p-1 hover:bg-white/20 rounded no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''} ${!isRecording && expansionPhase === 'expanded' ? 'animate-icon-float-up' : ''}`}
+            style={{
+              animationDelay: !isRecording && expansionPhase === 'expanded' ? '0ms' : undefined
+            }}
             title="History"
           >
-            <History className="text-white/90 hover:text-white/90 h-4 w-4" />
+            <History className="text-white/90 h-4 w-4" />
           </button>
         )}
 
@@ -328,10 +333,13 @@ function CompactBar({
         {((!isRecording) || showIconsDuringRecording) && (
           <button
             onClick={() => handlePanelToggle('settings')}
-            className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
+            className={`p-1 hover:bg-white/20 rounded no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''} ${!isRecording && expansionPhase === 'expanded' ? 'animate-icon-float-up' : ''}`}
+            style={{
+              animationDelay: !isRecording && expansionPhase === 'expanded' ? '100ms' : undefined
+            }}
             title="Settings"
           >
-            <Settings2 className="text-white/90 hover:text-white/90 h-4 w-4" />
+            <Settings2 className="text-white/90 h-4 w-4" />
           </button>
         )}
 
