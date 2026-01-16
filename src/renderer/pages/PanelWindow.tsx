@@ -1,7 +1,18 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConfigStore, HISTORY_STORAGE_KEY } from '../store/configStore';
 import { HOTKEY_OPTIONS, MODEL_OPTIONS, DURATION_OPTIONS } from '../constants';
-import { WhisperModel } from '../../shared/types';
+import type { WhisperModel } from '../../shared/types';
+import { Copy, FileText, History, Keyboard, KeyRound, Mic, Settings as SettingsIcon, Share, Trash2, X } from 'lucide-react';
+
+const verbaIcon = new URL('../../../assets/icon.png', import.meta.url).href;
+type IconTone = 'iris' | 'aqua' | 'rose' | 'amber';
+
+const iconToneClasses: Record<IconTone, string> = {
+  iris: 'bg-gradient-to-br from-indigo-500/30 to-purple-500/30 text-indigo-100',
+  aqua: 'bg-gradient-to-br from-sky-500/30 to-cyan-500/30 text-sky-100',
+  rose: 'bg-gradient-to-br from-rose-500/30 to-pink-500/30 text-rose-100',
+  amber: 'bg-gradient-to-br from-amber-500/30 to-orange-500/30 text-amber-100',
+};
 
 interface PanelWindowProps {
   initialTab: 'settings' | 'history';
@@ -26,9 +37,7 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
       }
     };
     window.addEventListener('storage', handleStorage);
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-    };
+    return () => window.removeEventListener('storage', handleStorage);
   }, [hydrateHistory]);
 
   useEffect(() => {
@@ -57,58 +66,116 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
     fetchDevices();
   }, [activeTab]);
 
-  const handleChange = <K extends keyof typeof localConfig>(key: K, value: typeof localConfig[K]) => {
+  const handleChange = useCallback(<K extends keyof typeof localConfig>(key: K, value: typeof localConfig[K]) => {
     setLocalConfig((prev) => ({ ...prev, [key]: value }));
-  };
+  }, []);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     setIsSaving(true);
     try {
       await saveConfig(localConfig);
-      setTimeout(() => {
-        setIsSaving(false);
-      }, 250);
+      setTimeout(() => setIsSaving(false), 250);
     } catch (error) {
       console.error('Failed to save config:', error);
       setIsSaving(false);
     }
-  };
+  }, [localConfig, saveConfig]);
+
+  const formattedModelLabel = useMemo(() => {
+    const option = MODEL_OPTIONS.find((opt) => opt.value === localConfig.model);
+    return option?.label || localConfig.model;
+  }, [localConfig.model]);
+
+  const recordingStats = useMemo(() => {
+    const seconds = history.reduce((sum, entry) => sum + (entry.duration || 0), 0);
+    const minutes = Math.floor(seconds / 60);
+    return minutes ? `${minutes} min recorded` : `${seconds || 0}s recorded`;
+  }, [history]);
+
+  const statCards = useMemo(
+    () => [
+      {
+        title: 'Active Model',
+        value: formattedModelLabel,
+        caption: 'Optimized for accuracy and latency',
+        tone: 'iris',
+        icon: <Mic size={18} />,
+      },
+      {
+        title: 'History',
+        value: history.length ? `${history.length} entries` : 'No transcripts',
+        caption: recordingStats,
+        tone: 'amber',
+        icon: <History size={18} />,
+      },
+    ],
+    [formattedModelLabel, history.length, localConfig.apiKey, recordingStats]
+  );
 
   const renderSettings = () => (
-    <div className="space-y-5 pr-1">
-      <section className="bg-white/5 border border-white/15 rounded-2xl p-4">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-white/70 mb-3">API & Model</h3>
-        <label className="block text-xs text-white/60 mb-1">API Key</label>
-        <input
-          type="text"
-          value={localConfig.apiKey}
-          onChange={(e) => handleChange('apiKey', e.target.value)}
-          className="w-full px-3 py-2 text-sm bg-white/10 border border-white/20 rounded-lg focus:border-sky-400 focus:ring-1 focus:ring-sky-400"
-          placeholder="sk-..."
-        />
-        <label className="block text-xs text-white/60 mt-3 mb-1">Model</label>
-        <select
-          value={localConfig.model}
-          onChange={(e) => handleChange('model', e.target.value as WhisperModel)}
-          className="w-full px-3 py-2 text-sm bg-white/10 border border-white/20 rounded-lg"
-        >
-          {MODEL_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+    <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {statCards.map((card) => (
+          <div
+            key={card.title}
+            className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_20px_45px_rgba(5,8,20,0.35)] backdrop-blur-md"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">{card.title}</p>
+                <p className="text-lg font-semibold text-white mt-1">{card.value}</p>
+              </div>
+              <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${iconToneClasses[card.tone as IconTone]}`}>
+                {card.icon}
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-white/60">{card.caption}</p>
+          </div>
+        ))}
       </section>
 
-      <section className="bg-white/5 border border-white/15 rounded-2xl p-4">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-white/70 mb-3">Recording</h3>
-        <div className="grid grid-cols-1 gap-4">
-          <div>
-            <label className="block text-xs text-white/60 mb-1">Max Duration</label>
+      <PanelSection
+        tone="iris"
+        title="API & Model"
+        subtitle="Connect Verba to your preferred OpenAI deployment"
+        icon={<KeyRound size={18} />}
+      >
+        <Field label="API Key">
+          <input
+            type="text"
+            value={localConfig.apiKey}
+            onChange={(e) => handleChange('apiKey', e.target.value)}
+            placeholder="sk-..."
+            className="w-full rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+          />
+        </Field>
+        <Field label="Speech Model">
+          <select
+            value={localConfig.model}
+            onChange={(e) => handleChange('model', e.target.value as WhisperModel)}
+            className="w-full rounded-2xl border border-white/15 bg-[#050812]/70 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+          >
+            {MODEL_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </PanelSection>
+
+      <PanelSection
+        tone="aqua"
+        title="Recording"
+        subtitle="Control capture duration and preferred device"
+        icon={<Mic size={18} />}
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Maximum Duration">
             <select
               value={localConfig.maxDuration}
               onChange={(e) => handleChange('maxDuration', parseInt(e.target.value, 10))}
-              className="w-full px-3 py-2 text-sm bg-white/10 border border-white/20 rounded-lg"
+              className="w-full rounded-2xl border border-white/15 bg-[#050812]/70 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
             >
               {DURATION_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -116,13 +183,12 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
                 </option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className="block text-xs text-white/60 mb-1">Input Device</label>
+          </Field>
+          <Field label="Input Device">
             <select
               value={localConfig.selectedInputDevice || ''}
               onChange={(e) => handleChange('selectedInputDevice', e.target.value || null)}
-              className="w-full px-3 py-2 text-sm bg-white/10 border border-white/20 rounded-lg"
+              className="w-full rounded-2xl border border-white/15 bg-[#050812]/70 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
             >
               <option value="">System Default</option>
               {audioDevices.map((device, idx) => (
@@ -131,16 +197,20 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
                 </option>
               ))}
             </select>
-          </div>
+          </Field>
         </div>
-      </section>
+      </PanelSection>
 
-      <section className="bg-white/5 border border-white/15 rounded-2xl p-4">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-white/70 mb-3">Hotkey</h3>
+      <PanelSection
+        tone="rose"
+        title="Global Hotkey"
+        subtitle="Summon Verba from any app with a single chord"
+        icon={<Keyboard size={18} />}
+      >
         <select
           value={localConfig.hotkey}
           onChange={(e) => handleChange('hotkey', e.target.value)}
-          className="w-full px-3 py-2 text-sm bg-white/10 border border-white/20 rounded-lg"
+          className="w-full rounded-2xl border border-white/15 bg-[#050812]/70 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
         >
           {HOTKEY_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -148,20 +218,22 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
             </option>
           ))}
         </select>
-        <p className="text-xs text-white/50 mt-2">Use this shortcut anywhere to toggle recording instantly.</p>
-      </section>
+        <p className="mt-2 text-xs text-white/60">
+          Use this shortcut anywhere to toggle recording instantly.
+        </p>
+      </PanelSection>
 
-      <div className="flex justify-end gap-3 pt-2">
+      <div className="flex justify-end gap-3">
         <button
           onClick={() => window.electronAPI.closePanelWindow()}
-          className="px-3 py-2 rounded-lg border border-white/20 text-sm text-white/80 hover:bg-white/10 transition-colors"
+          className="rounded-2xl border border-white/15 px-4 py-2 text-sm text-white/80 transition-all hover:bg-white/10"
         >
           Close
         </button>
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="px-4 py-2 rounded-lg bg-sky-500 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-50 transition-colors"
+          className="rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-sky-900/30 transition hover:brightness-110 disabled:opacity-50"
         >
           {isSaving ? 'Saving…' : 'Save Changes'}
         </button>
@@ -170,91 +242,108 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
   );
 
   const renderHistory = () => (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between pb-4">
-        <div className="text-sm text-white/70">{history.length} transcriptions</div>
-        <div className="flex gap-2">
+    <div className="flex h-full flex-col gap-4 overflow-hidden">
+      <section className="flex justify-between rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_30px_60px_rgba(5,8,20,0.4)] backdrop-blur-md">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">Activity log</p>
+            <p className="text-xl font-semibold text-white">{history.length ? `${history.length} transcripts` : 'No transcripts yet'}</p>
+            <p className="text-xs text-white/60">{recordingStats}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-col gap-2">
           <button
             onClick={() => exportHistory('txt')}
             disabled={history.length === 0}
-            className="px-3 py-1.5 rounded-lg border border-white/20 text-xs text-white/80 hover:bg-white/10 disabled:opacity-40"
+            className="flex items-center gap-2 rounded-full border border-white/50 px-3 py-1.5 text-sm text-white transition hover:bg-white/10 disabled:opacity-60"
           >
-            Export
+            <Share className="h-3.5 w-3.5" /> Export
           </button>
           <button
             onClick={clearHistory}
             disabled={history.length === 0}
-            className="px-3 py-1.5 rounded-lg border border-red-400/40 text-xs text-red-200 hover:bg-red-500/10 disabled:opacity-40"
+            className="flex items-center gap-2 rounded-full border border-rose-400/50 px-3 py-1.5 text-sm text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-60"
           >
-            Clear
+            <Trash2 className="h-3.5 w-3.5" /> Clear
           </button>
         </div>
+      </section>
+
+      <div className="flex-1 overflow-y-auto pr-2">
+        {history.length === 0 ? (
+          <EmptyHistory />
+        ) : (
+          <div className="relative pl-6">
+            <span className="absolute left-3 top-4 bottom-4 w-px bg-white/10" />
+            {history.map((item) => (
+              <article
+                key={item.id}
+                className="relative mb-4 rounded-2xl border border-white/10 bg-white/5 p-4 shadow-inner shadow-black/40 backdrop-blur"
+              >
+                <span className="absolute left-[-6px] top-6 h-3 w-3 rounded-full border border-[#040713] bg-white shadow" />
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">{formatTimestamp(item.timestamp)}</p>
+                    <p className="text-xs text-white/60">{formatDurationLabel(item.duration)}</p>
+                  </div>
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70">
+                    {item.model}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm text-white/90 whitespace-pre-wrap leading-relaxed">{item.text}</p>
+                <div className="mt-3 flex justify-end">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(item.text)}
+                    className="flex items-center gap-2 rounded-full border border-white/20 px-3 py-1 text-xs text-white/80 transition hover:bg-white/10"
+                  >
+                    <Copy className="h-3.5 w-3.5" /> Copy
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </div>
-      {history.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-white/30 text-sm">
-          No transcriptions yet.
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto pr-1 space-y-3">
-          {history.map((item) => (
-            <div key={item.id} className="bg-white/5 border border-white/10 rounded-2xl p-3">
-              <div className="flex items-center justify-between text-xs text-white/60 mb-2">
-                <span>{new Date(item.timestamp).toLocaleString()}</span>
-                <span>{item.model}</span>
-              </div>
-              <p className="text-sm text-white/90 whitespace-pre-wrap leading-relaxed">{item.text}</p>
-              <div className="flex justify-end mt-2">
-                <button
-                  onClick={() => navigator.clipboard.writeText(item.text)}
-                  className="text-xs text-sky-300 hover:text-sky-100"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 
   return (
-    <div className="w-full h-full bg-[#040713] text-white flex flex-col">
-      <header className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5 backdrop-blur-xl">
-        <div>
-          <p className="text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-fuchsia-400 to-violet-500">
-            Voxify Console
-          </p>
-          <p className="text-[11px] uppercase tracking-[0.35em] text-white/60">Control Center</p>
+    <div className="flex h-full w-full flex-col bg-[#040713] text-white">
+      <header className="flex items-center justify-between border-b border-white/10 bg-white/5 px-6 py-4 backdrop-blur-xl">
+        <div className="flex items-center gap-3">
+          <img src={verbaIcon} alt="Verba logo" className="h-12 w-12 rounded-3xl border border-white/15 bg-black/50 p-2 shadow-lg" />
+          <div>
+            <p className="text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-fuchsia-400 to-violet-500">
+              Verba Console
+            </p>
+            <p className="text-[11px] uppercase tracking-[0.35em] text-white/60">Control Center</p>
+          </div>
         </div>
         <button
           onClick={() => window.electronAPI.closePanelWindow()}
-          className="p-2 rounded-full hover:bg-white/10 transition border border-white/10"
-          title="Close"
+          className="rounded-full border border-white/15 p-2 text-white/80 transition hover:bg-white/10"
+          title="Close panel"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X className="h-4 w-4" />
         </button>
       </header>
 
-      <div className="flex gap-3 px-6 pt-4 border-b border-white/10">
+      <div className="flex gap-3 border-b border-white/10 px-6 pt-4">
         {(['settings', 'history'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-semibold rounded-full transition-all duration-200 ${
-              activeTab === tab
-                ? 'bg-white text-[#040713] shadow-lg shadow-white/20'
-                : 'text-white/60 hover:text-white hover:bg-white/10'
+            className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+              activeTab === tab ? 'bg-white text-[#040713] shadow-lg shadow-white/20' : 'text-white/60 hover:text-white hover:bg-white/10'
             }`}
           >
+            {tab === 'settings' ? <SettingsIcon className="h-4 w-4" /> : <History size={18} />}
             {tab === 'settings' ? 'Settings' : 'History'}
           </button>
         ))}
       </div>
 
-      <main className="flex-1 px-6 py-5 overflow-hidden">
+      <main className="flex-1 px-6 py-5 overflow-hidden flex flex-col">
         {activeTab === 'settings' ? renderSettings() : renderHistory()}
       </main>
     </div>
@@ -262,3 +351,59 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
 };
 
 export default PanelWindow;
+
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <label className="block space-y-2">
+    <span className="text-xs uppercase tracking-[0.3em] text-white/50">{label}</span>
+    {children}
+  </label>
+);
+
+const PanelSection: React.FC<{ title: string; subtitle?: string; icon: React.ReactNode; tone: IconTone; children: React.ReactNode }> = ({
+  title,
+  subtitle,
+  icon,
+  tone,
+  children,
+}) => (
+  <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#050812] to-[#0b1127] p-5 shadow-[0_30px_60px_rgba(5,8,20,0.45)]">
+    <div className="mb-4 flex items-start gap-4">
+      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${iconToneClasses[tone]}`}>{icon}</div>
+      <div>
+        <p className="text-sm font-semibold uppercase tracking-[0.4em] text-white/60">{title}</p>
+        {subtitle && <p className="text-xs text-white/50">{subtitle}</p>}
+      </div>
+    </div>
+    <div className="space-y-4">{children}</div>
+  </section>
+);
+
+const EmptyHistory = () => (
+  <div className="flex h-full flex-col items-center justify-center rounded-3xl border border-dashed border-white/15 bg-white/5 text-center py-16">
+    <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${iconToneClasses.aqua}`}>
+      <History className="h-5 w-5" />
+    </div>
+    <p className="mt-4 text-sm font-medium text-white/80">No transcripts yet</p>
+    <p className="text-xs text-white/50">Your recordings will appear here once you transcribe.</p>
+  </div>
+);
+
+function formatTimestamp(timestamp: number): string {
+  return new Date(timestamp).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+function formatDurationLabel(seconds?: number): string {
+  if (seconds === undefined) return '';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, '0');
+  return mins ? `${mins}m ${secs}s` : `${secs}s`;
+}
+
+
+
+

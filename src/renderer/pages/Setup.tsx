@@ -64,7 +64,7 @@ function Setup() {
               />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-surface-800">Voice Transcriber</h1>
+          <h1 className="text-2xl font-bold text-surface-800">Verba</h1>
           <p className="text-surface-500 mt-2">
             Set up your OpenAI API key to get started
           </p>

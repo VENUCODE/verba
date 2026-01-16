@@ -1,4 +1,4 @@
-export const APP_NAME = 'Voice Transcriber';
+export const APP_NAME = 'Verba';
 export const APP_VERSION = '1.0.0';
 
 export const SUPPORTED_AUDIO_FORMATS = ['audio/webm', 'audio/mp4', 'audio/ogg'];

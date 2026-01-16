@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DURATION_OPTIONS = exports.RESPONSE_FORMAT_OPTIONS = exports.MODEL_OPTIONS = exports.HOTKEY_OPTIONS = exports.RECORDING_OPTIONS = exports.AUDIO_CONSTRAINTS = exports.SUPPORTED_AUDIO_FORMATS = exports.APP_VERSION = exports.APP_NAME = void 0;
-exports.APP_NAME = 'Voice Transcriber';
+exports.APP_NAME = 'Verba';
 exports.APP_VERSION = '1.0.0';
 exports.SUPPORTED_AUDIO_FORMATS = ['audio/webm', 'audio/mp4', 'audio/ogg'];
 exports.AUDIO_CONSTRAINTS = {

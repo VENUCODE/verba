@@ -263,7 +263,7 @@ function Settings({ onNavigate }: SettingsProps) {
         {/* About */}
         <section className="bg-white rounded-xl p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-surface-800 mb-4">About</h2>
-          <p className="text-sm text-surface-500">Voice Transcriber v1.0.0</p>
+          <p className="text-sm text-surface-500">Verba v1.0.0</p>
           <p className="text-xs text-surface-400 mt-1">
             Uses OpenAI Whisper API for transcription
           </p>

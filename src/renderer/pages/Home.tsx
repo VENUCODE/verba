@@ -148,7 +148,7 @@ function Home({ onNavigate }: HomeProps) {
     <div className="flex-1 flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-200 bg-white">
-        <h1 className="text-lg font-semibold text-surface-800">Voice Transcriber</h1>
+        <h1 className="text-lg font-semibold text-surface-800">Verba</h1>
         <button
           onClick={() => window.electronAPI.minimizeToTray()}
           className="p-2 hover:bg-surface-100 rounded-lg transition-colors"
