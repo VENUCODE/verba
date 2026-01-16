@@ -18,9 +18,10 @@ function App() {
   
   const [isLoading, setIsLoading] = useState(true);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [expansionPhase, setExpansionPhase] = useState<'collapsed' | 'expanding' | 'expanded'>('expanded');
+  const [expansionPhase, setExpansionPhase] = useState<'collapsed' | 'morphing' | 'expanding' | 'expanded'>('expanded');
   const [lastInteraction, setLastInteraction] = useState(Date.now());
   const [expandedDimensions, setExpandedDimensions] = useState({ width: EXPANDED_BASE_WIDTH, height: EXPANDED_BASE_HEIGHT });
+  const [isChipHovering, setIsChipHovering] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -71,20 +72,29 @@ function App() {
     if (viewMode !== 'compact') return;
 
     const handleExpansion = () => {
-      // Phase 1 (0ms): Set expansion phase and resize window to stored dimensions
-      setExpansionPhase('expanding');
+      // Clear hover visual state
+      setIsChipHovering(false);
+
+      // Phase 1 (0ms): Start morphing - chip grows and fades
+      setExpansionPhase('morphing');
       void window.electronAPI.resizeWindow(expandedDimensions.width, expandedDimensions.height);
 
-      // Phase 2 (100ms): Trigger content expansion
+      // Phase 2 (400ms): Switch to compact bar content
       setTimeout(() => {
         setIsCollapsed(false);
-      }, 100);
+        setExpansionPhase('expanding');
+      }, 400);
 
-      // Phase 3 (300ms): Enable icon animations and resize to content
+      // Phase 3 (600ms): Bar is visible, but icons still hidden
       setTimeout(() => {
-        setExpansionPhase('expanded');
+        setExpansionPhase('expanding');  // Bar visible, icons pending
+      }, 600);
+
+      // Phase 4 (1100ms = 600ms bar + 500ms delay): Enable icon animations
+      setTimeout(() => {
+        setExpansionPhase('expanded');  // Now icons can animate
         requestResize();
-      }, 300);
+      }, 1100);  // 400ms morph + 200ms bar appear + 500ms icon delay
 
       hoverTimeoutRef.current = null;
     };
@@ -94,6 +104,7 @@ function App() {
       if (isCollapsed) {
         // Start hover timer if not already started
         if (!hoverTimeoutRef.current) {
+          setIsChipHovering(true);
           hoverTimeoutRef.current = setTimeout(handleExpansion, 1000); // 1 second delay
         }
       }
@@ -107,11 +118,14 @@ function App() {
           clearTimeout(hoverTimeoutRef.current);
           hoverTimeoutRef.current = null;
         }
+        setIsChipHovering(false);
         handleExpansion();
       }
     };
 
     const handleMouseLeave = () => {
+      // Clear hover visual state
+      setIsChipHovering(false);
       // Cancel hover timer if user moves mouse away
       if (hoverTimeoutRef.current) {
         clearTimeout(hoverTimeoutRef.current);
@@ -248,6 +262,7 @@ function App() {
           onInteraction={() => setLastInteraction(Date.now())}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
+          isHovering={isChipHovering}
         />
       </div>
     </div>

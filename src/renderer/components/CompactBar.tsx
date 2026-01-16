@@ -9,10 +9,11 @@ interface CompactBarProps {
   onNavigate: (page: 'home' | 'settings' | 'history') => void;
   onExpand?: () => void;
   isCollapsed?: boolean;
-  expansionPhase?: 'collapsed' | 'expanding' | 'expanded';
+  expansionPhase?: 'collapsed' | 'morphing' | 'expanding' | 'expanded';
   onInteraction?: () => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
+  isHovering?: boolean;
 }
 
 function CompactBar({
@@ -23,6 +24,7 @@ function CompactBar({
   onInteraction,
   onDragStart,
   onDragEnd,
+  isHovering = false,
 }: CompactBarProps) {
   const { config, status, setStatus, setError, addToHistory, error } = useConfigStore();
   const [showIconsDuringRecording, setShowIconsDuringRecording] = useState(false);
@@ -177,13 +179,20 @@ function CompactBar({
   }, []);
 
   if (isCollapsed) {
+    const isMorphing = expansionPhase === 'morphing';
+
     return (
       <div
-        className="drag-region relative flex h-full w-full items-center justify-center rounded-2xl shadow-xl cursor-pointer hover:opacity-95 transition-opacity duration-200 overflow-hidden"
+        className={`drag-region relative flex h-full w-full items-center justify-center rounded-2xl shadow-xl cursor-pointer overflow-hidden
+          ${isMorphing ? 'animate-chip-morph' : 'transition-all duration-300'}
+          ${isHovering && !isMorphing ? 'hover-glow-active' : ''}`}
         style={{
-          background: 'rgba(16, 20, 35, 0.75)',
+          background: isMorphing
+            ? 'rgba(0, 0, 0, 0.9)'  // Transition to compact bar color
+            : 'rgba(16, 20, 35, 0.75)',
           border: '1px solid rgba(255, 255, 255, 0)',
           backdropFilter: 'blur(14px)',
+          opacity: isMorphing ? 0 : 1,
         }}
         onClick={() => {
           onInteraction?.();
@@ -198,6 +207,17 @@ function CompactBar({
         }}
         title="Click to expand"
       >
+        {/* Animated glow overlay - visible during hover */}
+        {isHovering && !isMorphing && (
+          <div
+            className="absolute inset-0 rounded-2xl animate-hover-glow"
+            style={{
+              background: 'linear-gradient(120deg, rgba(59,130,246,0.4), rgba(147,51,234,0.4), rgba(59,130,246,0.4))',
+              backgroundSize: '200% 200%',
+            }}
+          />
+        )}
+        {/* Existing gradient overlay */}
         <div
           className="absolute inset-1 rounded-2xl opacity-40"
           style={{
@@ -205,7 +225,10 @@ function CompactBar({
             animation: 'pulse 2s ease-in-out infinite alternate',
           }}
         ></div>
-        <div className="relative z-10 flex w-full items-center justify-center px-4">
+        {/* Content fades out during morph */}
+        <div
+          className={`relative z-10 flex w-full items-center justify-center px-4 transition-opacity duration-300 ${isMorphing ? 'opacity-0' : ''}`}
+        >
           <div className="h-1.5 w-24 rounded-full bg-white/40 shadow-sm"></div>
         </div>
       </div>
@@ -213,7 +236,11 @@ function CompactBar({
   }
 
   return (
-    <div className="flex w-full flex-col rounded-2xl border border-blue-400/12 bg-black/90 shadow-2xl overflow-hidden" style={{ minWidth: '216px', minHeight: '56px' }}>
+    <div
+      className={`flex w-full flex-col rounded-2xl border border-blue-400/12 bg-black/90 shadow-2xl overflow-hidden
+        ${expansionPhase === 'expanding' ? 'animate-bar-appear' : ''}`}
+      style={{ minWidth: '216px', minHeight: '56px' }}
+    >
       {/* Main Bar */}
       <div
         className="flex w-full items-center gap-2 px-4 py-2 min-h-[44px] overflow-visible"
@@ -315,13 +342,13 @@ function CompactBar({
         // )
         }
 
-        {/* History Button - Hide during recording unless explicitly shown */}
-        {((!isRecording) || showIconsDuringRecording) && (
+        {/* History Button - only show when fully expanded */}
+        {((!isRecording && expansionPhase === 'expanded') || showIconsDuringRecording) && (
           <button
             onClick={() => handlePanelToggle('history')}
-            className={`p-1 hover:bg-white/20 rounded no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''} ${!isRecording && expansionPhase === 'expanded' ? 'animate-icon-float-up' : ''}`}
+            className={`p-1 hover:bg-white/20 rounded no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : 'animate-icon-float-up'}`}
             style={{
-              animationDelay: !isRecording && expansionPhase === 'expanded' ? '0ms' : undefined
+              animationDelay: '0ms'  // First icon, no additional delay
             }}
             title="History"
           >
@@ -329,13 +356,13 @@ function CompactBar({
           </button>
         )}
 
-        {/* Settings Button - Hide during recording unless explicitly shown */}
-        {((!isRecording) || showIconsDuringRecording) && (
+        {/* Settings Button */}
+        {((!isRecording && expansionPhase === 'expanded') || showIconsDuringRecording) && (
           <button
             onClick={() => handlePanelToggle('settings')}
-            className={`p-1 hover:bg-white/20 rounded no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''} ${!isRecording && expansionPhase === 'expanded' ? 'animate-icon-float-up' : ''}`}
+            className={`p-1 hover:bg-white/20 rounded no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : 'animate-icon-float-up'}`}
             style={{
-              animationDelay: !isRecording && expansionPhase === 'expanded' ? '100ms' : undefined
+              animationDelay: '400ms'  // 0.4s after History
             }}
             title="Settings"
           >
@@ -343,37 +370,48 @@ function CompactBar({
           </button>
         )}
 
-        {/* Minimize to Chip Button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            // Always collapse to chip, regardless of panel state
-            onInteraction?.();
-            // Signal to parent to collapse
-            if (onExpand) {
-              onExpand();
-            }
-          }}
-          className="p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer"
-          title="Minimize to chip"
-        >
-          <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-          </svg>
-        </button>
+        {/* Minimize Button */}
+        {expansionPhase === 'expanded' && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              // Always collapse to chip, regardless of panel state
+              onInteraction?.();
+              // Signal to parent to collapse
+              if (onExpand) {
+                onExpand();
+              }
+            }}
+            className="p-1 hover:bg-white/20 rounded no-drag cursor-pointer animate-icon-float-up"
+            style={{
+              animationDelay: '800ms'  // 0.4s after Settings
+            }}
+            title="Minimize to chip"
+          >
+            <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+            </svg>
+          </button>
+        )}
 
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleHideWindow();
-          }}
-          className="p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer"
-          title="Hide to tray"
-        >
-          <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M6 18L18 6" />
-          </svg>
-        </button>
+        {/* Close Button */}
+        {expansionPhase === 'expanded' && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleHideWindow();
+            }}
+            className="p-1 hover:bg-white/20 rounded no-drag cursor-pointer animate-icon-float-up"
+            style={{
+              animationDelay: '1200ms'  // 0.4s after Minimize
+            }}
+            title="Hide to tray"
+          >
+            <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M6 18L18 6" />
+            </svg>
+          </button>
+        )}
       </div>
 
     </div>
