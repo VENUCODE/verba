@@ -1,322 +1,125 @@
-# Voice Transcriber - Testing Guide
-
-This document provides comprehensive testing procedures for the Voice Transcriber application across all platforms.
+# Verba - Testing Guide
 
 ## Prerequisites
 
-Before testing, ensure you have:
+- Node.js 18+
+- Valid OpenAI API key
+- Microphone access
 
-1. **Dependencies Installed**
-   ```bash
-   npm install
-   ```
-
-2. **Valid OpenAI API Key**
-   - Obtain an API key from https://platform.openai.com/api-keys
-   - Ensure your account has access to the transcription models
-
-3. **Microphone Access**
-   - Grant microphone permissions to your browser/system
-   - Test your microphone is working
-
-## Development Testing
-
-### Running in Development Mode
+## Quick Start
 
 ```bash
+npm install
 npm run dev
 ```
 
-This starts:
-- Vite dev server on http://localhost:5173
-- Electron app with hot reload
+## Core Functionality Tests
 
-### Build Testing
+### Setup Flow
+| Test | Steps | Expected |
+|------|-------|----------|
+| First launch | Start app fresh | Setup screen appears |
+| API key validation | Enter invalid key | Error message shown |
+| Setup completion | Enter valid key, select model | Transitions to compact bar |
 
-```bash
-npm run build
-```
+### Recording
+| Test | Steps | Expected |
+|------|-------|----------|
+| Start recording | Click mic button | Visualizer animates, timer starts |
+| Stop recording | Click mic button again | Recording stops, transcription begins |
+| Hotkey recording | Press Ctrl+Shift+Space | Recording toggles |
+| Max duration | Record past limit | Auto-stops at configured duration |
 
-Verifies TypeScript compilation and Vite build.
+### Transcription
+| Test | Steps | Expected |
+|------|-------|----------|
+| Basic transcription | Record short audio | Text appears and auto-pastes |
+| Model switch | Change model in settings | Next transcription uses new model |
+| Network error | Disconnect internet | Clear error message shown |
+| Invalid API key | Use expired key | Auth error with retry option |
 
-## Functional Testing Checklist
+### Window Behavior
+| Test | Steps | Expected |
+|------|-------|----------|
+| Drag | Drag by handle | Window moves, stays on screen |
+| Auto-collapse | Wait 60s without interaction | Collapses to chip |
+| Expand | Hover over collapsed chip | Expands to full bar |
+| Panel open | Click settings icon | Panel window opens |
 
-### 1. Initial Setup Flow
+## Model-Specific Tests
 
-- [ ] Application launches successfully
-- [ ] Setup screen appears on first launch
-- [ ] API key input field is visible
-- [ ] Can paste/enter API key
-- [ ] API key validation works
-- [ ] Setup completes and navigates to home screen
+### whisper-1
+- [ ] Standard transcription works
+- [ ] Verbose JSON returns timestamps
+- [ ] SRT/VTT export generates valid subtitle files
 
-### 2. Model Selection
+### gpt-4o-transcribe
+- [ ] Transcription with high accuracy
+- [ ] Streaming delivers chunks via IPC
 
-Test all three models:
-
-#### GPT-4o Transcribe
-- [ ] Can select in settings
-- [ ] Shows correct description and features
+### gpt-4o-mini-transcribe
 - [ ] Transcription works
-- [ ] Streaming transcription works (if applicable)
-- [ ] Error handling for invalid API key
-- [ ] Error handling for rate limits
+- [ ] Faster than full gpt-4o
 
-#### GPT-4o Mini Transcribe
-- [ ] Can select in settings
-- [ ] Shows correct description and features
-- [ ] Transcription works
-- [ ] Streaming transcription works (if applicable)
-- [ ] Cost indicator shows correct level
+## Platform Build Tests
 
-#### Whisper-1
-- [ ] Can select in settings
-- [ ] Shows timestamp features
-- [ ] Transcription works
-- [ ] Response format options work (text, json, verbose_json, srt, vtt)
-- [ ] Timestamp granularities work
-
-### 3. Recording Functionality
-
-- [ ] Click to start recording
-- [ ] Microphone indicator shows activity
-- [ ] Waveform visualizer animates
-- [ ] Duration counter updates
-- [ ] Can stop recording manually
-- [ ] Auto-stops at max duration
-- [ ] File size limit enforced (25MB)
-
-### 4. Transcription Process
-
-- [ ] "Transcribing..." status shows
-- [ ] Loading indicator displays
-- [ ] Completes successfully
-- [ ] Text is pasted automatically (requires @nut-tree-fork/nut-js)
-- [ ] Added to history
-- [ ] Error messages are clear and helpful
-
-### 5. Global Hotkey
-
-Test all hotkey options:
-- [ ] Ctrl+Shift+Space (default)
-- [ ] Ctrl+Alt+R
-- [ ] Ctrl+Shift+R
-- [ ] F9
-- [ ] F10
-
-Verify:
-- [ ] Hotkey starts recording when app is not focused
-- [ ] Hotkey stops recording when already recording
-- [ ] Changing hotkey in settings updates immediately
-
-### 6. Settings Page
-
-#### API Configuration
-- [ ] Can update API key
-- [ ] Can change model
-- [ ] Model selector shows all options with details
-- [ ] Settings persist after restart
-
-#### Advanced Settings
-- [ ] Response format selection works
-- [ ] Language field accepts ISO codes
-- [ ] Temperature slider works (0-1)
-- [ ] Format restrictions enforced (e.g., SRT only for whisper-1)
-
-#### Recording Settings
-- [ ] Max duration dropdown works
-- [ ] Audio device selector shows available mics
-- [ ] Selected device persists
-
-#### Behavior Settings
-- [ ] Launch at startup toggle
-- [ ] Start minimized toggle
-- [ ] Settings save successfully
-
-### 7. History Management
-
-- [ ] Transcriptions appear in history
-- [ ] Search functionality works
-- [ ] Sort options work (recent, oldest, duration)
-- [ ] Copy to clipboard button works
-- [ ] History persists between sessions
-- [ ] Can clear history
-
-#### Export Functionality
-- [ ] Export to TXT works
-- [ ] Export to JSON works
-- [ ] Export to SRT works
-- [ ] Exported files have correct content
-- [ ] Exported filenames include timestamp
-
-### 8. Error Handling
-
-Test error scenarios:
-
-#### API Errors
-- [ ] Invalid API key shows clear message
-- [ ] Rate limit shows retry message
-- [ ] Network error shows connectivity message
-- [ ] Server error (5xx) shows appropriate message
-
-#### Recording Errors
-- [ ] Microphone permission denied shows message
-- [ ] No microphone detected shows message
-- [ ] Microphone in use shows message
-
-#### File Errors
-- [ ] File too large shows size limit
-- [ ] Unsupported format shows format message
-
-### 9. UI/UX Testing
-
-- [ ] All buttons are responsive
-- [ ] Animations are smooth
-- [ ] Text is readable
-- [ ] Colors have good contrast
-- [ ] Layout adapts to window resize
-- [ ] No visual glitches
-- [ ] Loading states are clear
-
-### 10. System Tray
-
-- [ ] Tray icon appears
-- [ ] Tray menu shows options
-- [ ] "Show Window" brings app to front
-- [ ] "Quit" closes app completely
-- [ ] Minimize to tray works
-- [ ] Close button minimizes to tray
-
-## Platform-Specific Testing
-
-### Windows Testing
-
+### Windows
 ```bash
 npm run package:win
 ```
+- [ ] Installer (`release/*.exe`) installs correctly
+- [ ] Portable version runs without installation
+- [ ] Global hotkeys work system-wide
+- [ ] System tray icon appears
 
-**Test Items:**
-- [ ] Installer (NSIS) works
-- [ ] Portable version works
-- [ ] Icon displays correctly
-- [ ] Hotkeys work system-wide
-- [ ] Microphone permission prompt
-- [ ] Text pasting works (Ctrl+V)
-- [ ] Tray icon visible in system tray
-- [ ] Startup on login works
-
-**File Locations:**
-- Built app: `release/win-unpacked/`
-- Installer: `release/*.exe`
-
-### macOS Testing
-
+### macOS
 ```bash
 npm run package:mac
 ```
+- [ ] DMG mounts and app copies to Applications
+- [ ] Global hotkeys work
+- [ ] Menu bar tray icon works
 
-**Test Items:**
-- [ ] DMG mounts successfully
-- [ ] App copies to Applications
-- [ ] Icon displays correctly
-- [ ] Hotkeys work system-wide
-- [ ] Microphone permission prompt
-- [ ] Text pasting works (Cmd+V)
-- [ ] Menu bar icon works
-- [ ] Startup on login works
-- [ ] Gatekeeper/signing (may require dev signing)
-
-**File Locations:**
-- Built app: `release/mac/`
-- DMG: `release/*.dmg`
-
-### Linux Testing
-
+### Linux
 ```bash
 npm run package:linux
 ```
-
-**Test Items:**
-- [ ] AppImage runs
+- [ ] AppImage runs directly
 - [ ] DEB package installs
-- [ ] Icon displays correctly
-- [ ] Hotkeys work system-wide
-- [ ] Microphone permission prompt
-- [ ] Text pasting works (Ctrl+V)
-- [ ] System tray icon visible
-- [ ] Desktop entry created
+- [ ] Hotkeys work (X11)
 
-**File Locations:**
-- AppImage: `release/*.AppImage`
-- DEB: `release/*.deb`
+## Error Scenarios
 
-**Note:** Text pasting on Linux requires X11. Wayland may have limitations.
+| Scenario | Trigger | Expected Message |
+|----------|---------|------------------|
+| No microphone | Disconnect mic | "No microphone detected" |
+| Permission denied | Deny mic access | "Microphone permission denied" |
+| Rate limited | Exceed API quota | "Rate limit exceeded, retry later" |
+| File too large | Record very long audio | "Audio file too large (25MB max)" |
 
-## Performance Testing
+## Performance Checks
 
-- [ ] App starts in < 3 seconds
-- [ ] Recording starts immediately
-- [ ] Transcription completes in reasonable time
-- [ ] Memory usage stays under 200MB idle
-- [ ] CPU usage normal during recording
-- [ ] No memory leaks after multiple recordings
+| Metric | Target |
+|--------|--------|
+| App startup | < 3 seconds |
+| Recording start | Immediate |
+| Memory (idle) | < 200MB |
+| Transcription | Depends on audio length + model |
 
-## Accessibility Testing
+## History & Export
 
-- [ ] Keyboard navigation works
-- [ ] Tab order is logical
-- [ ] Focus indicators visible
-- [ ] Screen reader compatible (basic)
-- [ ] High contrast mode works
+- [ ] Transcriptions appear in history after completion
+- [ ] Search filters results correctly
+- [ ] Sort by date/duration works
+- [ ] Export TXT includes metadata
+- [ ] Export JSON is valid parseable JSON
+- [ ] Export SRT has correct timing format
 
-## Integration Testing
+## Regression Checklist
 
-### OpenAI API Integration
-- [ ] whisper-1 endpoint works
-- [ ] gpt-4o-transcribe endpoint works
-- [ ] gpt-4o-mini-transcribe endpoint works
-- [ ] Streaming works for supported models
-- [ ] Error responses handled correctly
-
-### System Integration
-- [ ] Microphone access works
-- [ ] Clipboard integration works
-- [ ] Keyboard automation works
-- [ ] File system access works
-- [ ] System tray integration works
-
-## Regression Testing
-
-After making changes, verify:
-- [ ] All previous features still work
-- [ ] No new console errors
-- [ ] No performance degradation
-- [ ] Settings still persist
-- [ ] History still loads
-
-## Known Limitations
-
-1. **Streaming Transcription**: Only works with gpt-4o models
-2. **Timestamp Features**: Only available with whisper-1
-3. **Text Pasting**: Requires @nut-tree-fork/nut-js installation
-4. **Linux Wayland**: Text pasting may not work on Wayland
-5. **File Size**: Maximum 25MB audio file (OpenAI limit)
-
-## Bug Reporting
-
-When reporting bugs, include:
-- Operating system and version
-- Node.js version
-- Electron version
-- Steps to reproduce
-- Expected vs actual behavior
-- Console errors (if any)
-- Screenshots/videos (if applicable)
-
-## Test Automation (Future)
-
-Consider adding:
-- Unit tests with Jest
-- Integration tests with Playwright
-- E2E tests for critical paths
-- CI/CD pipeline with GitHub Actions
+After changes, verify:
+- [ ] API key persists after restart
+- [ ] Selected model persists
+- [ ] History loads on startup
+- [ ] Hotkey still registered
+- [ ] Window sizing stable during drag
