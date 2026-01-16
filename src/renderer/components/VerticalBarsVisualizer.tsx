@@ -94,7 +94,7 @@ function VerticalBarsVisualizer({
     ctx.clearRect(0, 0, width, canvasHeight);
 
     // Target bar width: 3px each (reduced from 4px)
-    const targetBarWidth = 3;
+    const targetBarWidth = 2.5;
     const gap = 2; // 2px gap between bars for better spacing
     const totalBarWidth = barCount * targetBarWidth + (barCount - 1) * gap;
     const startX = (width - totalBarWidth) / 2; // Center the bars
@@ -210,7 +210,7 @@ function VerticalBarsVisualizer({
         width={canvasWidth}
         height={height}
         className="w-full h-full"
-        style={{ imageRendering: 'crisp-edges' }}
+        style={{ imageRendering: 'pixelated' }}
       />
     </div>
   );

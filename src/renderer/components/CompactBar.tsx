@@ -3,6 +3,7 @@ import { useConfigStore } from '../store/configStore';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import VerticalBarsVisualizer from './VerticalBarsVisualizer';
 import { soundManager } from '../utils/sounds';
+import { GripVertical, History, Settings2 } from 'lucide-react';
 
 interface CompactBarProps {
   onNavigate: (page: 'home' | 'settings' | 'history') => void;
@@ -226,7 +227,6 @@ function CompactBar({
         {/* Drag Handle - 6 dots in 2x3 grid */}
         <div 
           className="flex items-center justify-center w-6 h-6 mr-2 drag-region hover:bg-white/10 rounded transition-colors" 
-          style={{ cursor: 'move' }}
           title="Drag to move"
           onMouseDown={() => {
             onDragStart?.();
@@ -237,20 +237,7 @@ function CompactBar({
             window.addEventListener('mouseup', handleMouseUp);
           }}
         >
-          <div className="flex gap-1">
-            {/* Left column */}
-            <div className="flex flex-col gap-0.5">
-              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
-              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
-              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
-            </div>
-            {/* Right column */}
-            <div className="flex flex-col gap-0.5">
-              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
-              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
-              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
-            </div>
-          </div>
+          <GripVertical className="text-white/70 hover:text-white/90" />
         </div>
 
         {/* Record Button - Replace with Visualizer when idle */}
@@ -289,11 +276,8 @@ function CompactBar({
         <div className="flex items-center gap-1.5 no-drag">
           {isRecording && (
             <>
-              <span className="text-[10px] font-mono whitespace-nowrap text-white/90">
-                {formatDuration(duration)}
-              </span>
-              <div className="h-8">
-                <VerticalBarsVisualizer audioStream={audioStream} isRecording={isRecording} barCount={18} height={32} />
+              <div className="h-full">
+                <VerticalBarsVisualizer audioStream={audioStream} isRecording={isRecording} barCount={18} height={46} />
               </div>
             </>
           )}
@@ -303,29 +287,31 @@ function CompactBar({
         </div>
 
         {/* Question mark icon with styled tooltip - Hide during recording unless explicitly shown */}
-        {((!isRecording) || showIconsDuringRecording) && (
-          <div className="relative group/help no-drag">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-              }}
-              className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer relative z-10 ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
-            >
-              <svg className="w-3.5 h-3.5 text-white/60 hover:text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </button>
-            {/* Styled tooltip - positioned below the icon */}
-            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-3 py-2 bg-gray-900 text-white text-[10px] rounded-lg shadow-2xl border border-white/30 whitespace-nowrap opacity-0 group-hover/help:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999] min-w-[120px]">
-              <div className="text-white/70 font-medium mb-1 text-[9px] uppercase tracking-wider">Hotkey</div>
-              <div className="text-white font-mono font-bold text-xs">
-                {config.hotkey.replace('CommandOrControl', 'Ctrl').replace('+', ' + ')}
-              </div>
-              {/* Arrow pointing up */}
-              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 border-l border-t border-white/30 transform rotate-45"></div>
-            </div>
-          </div>
-        )}
+        {
+        // ((!isRecording) || showIconsDuringRecording) && (
+        //   <div className="relative group/help no-drag">
+        //     <button
+        //       onClick={(e) => {
+        //         e.stopPropagation();
+        //       }}
+        //       className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer relative z-10 ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
+        //     >
+        //       <svg className="w-3.5 h-3.5 text-white/60 hover:text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        //         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        //       </svg>
+        //     </button>
+        //     {/* Styled tooltip - positioned below the icon */}
+        //     <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-3 py-2 bg-gray-900 text-white text-[10px] rounded-lg shadow-2xl border border-white/30 whitespace-nowrap opacity-0 group-hover/help:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999] min-w-[120px]">
+        //       <div className="text-white/70 font-medium mb-1 text-[9px] uppercase tracking-wider">Hotkey</div>
+        //       <div className="text-white font-mono font-bold text-xs">
+        //         {config.hotkey.replace('CommandOrControl', 'Ctrl').replace('+', ' + ')}
+        //       </div>
+        //       {/* Arrow pointing up */}
+        //       <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 border-l border-t border-white/30 transform rotate-45"></div>
+        //     </div>
+        //   </div>
+        // )
+        }
 
         {/* History Button - Hide during recording unless explicitly shown */}
         {((!isRecording) || showIconsDuringRecording) && (
@@ -334,9 +320,7 @@ function CompactBar({
             className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
             title="History"
           >
-            <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <History className="text-white/90 hover:text-white/90 h-4 w-4" />
           </button>
         )}
 
@@ -347,10 +331,7 @@ function CompactBar({
             className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
             title="Settings"
           >
-            <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
+            <Settings2 className="text-white/90 hover:text-white/90 h-4 w-4" />
           </button>
         )}
 
@@ -386,13 +367,6 @@ function CompactBar({
           </svg>
         </button>
       </div>
-
-      {/* Error Message */}
-      {error && (
-        <div className="px-3 py-1.5 bg-red-900/80 text-red-200 text-xs border-t border-red-800/50">
-          {error}
-        </div>
-      )}
 
     </div>
   );

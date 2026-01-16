@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConfigStore, HISTORY_STORAGE_KEY } from '../store/configStore';
 import { HOTKEY_OPTIONS, MODEL_OPTIONS, DURATION_OPTIONS } from '../constants';
 import type { WhisperModel } from '../../shared/types';
-import { Copy, FileText, History, Keyboard, KeyRound, Mic, Settings as SettingsIcon, Share, Trash2, X } from 'lucide-react';
+import { Copy, Eye, EyeOff, History, Keyboard, KeyRound, Mic, Settings as SettingsIcon, Trash2, X } from 'lucide-react';
 
 const verbaIcon = new URL('../../../assets/icon.png', import.meta.url).href;
 type IconTone = 'iris' | 'aqua' | 'rose' | 'amber';
@@ -24,6 +24,7 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
   const [localConfig, setLocalConfig] = useState(config);
   const [isSaving, setIsSaving] = useState(false);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -141,19 +142,28 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
         icon={<KeyRound size={18} />}
       >
         <Field label="API Key">
-          <input
-            type="text"
-            value={localConfig.apiKey}
-            onChange={(e) => handleChange('apiKey', e.target.value)}
-            placeholder="sk-..."
-            className="w-full rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
-          />
+          <div className="relative">
+            <input
+              type={showApiKey ? 'text' : 'password'}
+              value={localConfig.apiKey}
+              onChange={(e) => handleChange('apiKey', e.target.value)}
+              placeholder="sk-..."
+              className="w-full rounded-2xl border border-white/15 bg-[#0b1224] px-3 py-2 pr-10 text-sm text-white placeholder-white/40 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+            />
+            <button
+              type="button"
+              onClick={() => setShowApiKey((prev) => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-white/60 transition hover:text-white"
+            >
+              {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
         </Field>
         <Field label="Speech Model">
           <select
             value={localConfig.model}
             onChange={(e) => handleChange('model', e.target.value as WhisperModel)}
-            className="w-full rounded-2xl border border-white/15 bg-[#050812]/70 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+            className="w-full rounded-2xl border border-white/15 bg-[#0b1224] px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
           >
             {MODEL_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -175,7 +185,7 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
             <select
               value={localConfig.maxDuration}
               onChange={(e) => handleChange('maxDuration', parseInt(e.target.value, 10))}
-              className="w-full rounded-2xl border border-white/15 bg-[#050812]/70 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+              className="w-full rounded-2xl border border-white/15 bg-[#0b1224] px-3 py-2 text-sm text-white focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
             >
               {DURATION_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -188,7 +198,7 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
             <select
               value={localConfig.selectedInputDevice || ''}
               onChange={(e) => handleChange('selectedInputDevice', e.target.value || null)}
-              className="w-full rounded-2xl border border-white/15 bg-[#050812]/70 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+              className="w-full rounded-2xl border border-white/15 bg-[#0b1224] px-3 py-2 text-sm text-white focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
             >
               <option value="">System Default</option>
               {audioDevices.map((device, idx) => (
@@ -210,7 +220,7 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
         <select
           value={localConfig.hotkey}
           onChange={(e) => handleChange('hotkey', e.target.value)}
-          className="w-full rounded-2xl border border-white/15 bg-[#050812]/70 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+          className="w-full rounded-2xl border border-white/15 bg-[#0b1224] px-3 py-2 text-sm text-white focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
         >
           {HOTKEY_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
