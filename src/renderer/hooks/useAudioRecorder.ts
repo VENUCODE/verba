@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { AUDIO_CONSTRAINTS, RECORDING_OPTIONS, WHISPER_MAX_FILE_SIZE } from '../constants';
 import { parseTranscriptionError } from '../utils/errorHandling';
 
-export type RecordingStatus = 'idle' | 'recording' | 'processing';
+export type RecordingStatus = 'idle' | 'recording' | 'paused' | 'processing';
 
 export interface AudioRecorderOptions {
   maxDuration?: number; // in seconds, default 120
@@ -13,7 +13,10 @@ export interface AudioRecorderOptions {
 export interface AudioRecorderResult {
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<Blob | null>;
+  pauseRecording: () => void;
+  resumeRecording: () => void;
   isRecording: boolean;
+  isPaused: boolean;
   status: RecordingStatus;
   duration: number;
   fileSize: number;
@@ -37,6 +40,8 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
+  const pausedDurationRef = useRef<number>(0);
+  const pauseStartTimeRef = useRef<number>(0);
   const maxDurationReachedRef = useRef(false);
 
   // Clear timer on unmount
@@ -77,6 +82,8 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
       setFileSize(0);
       audioChunksRef.current = [];
       maxDurationReachedRef.current = false;
+      pausedDurationRef.current = 0;
+      pauseStartTimeRef.current = 0;
 
       // Build audio constraints with optional device selection
       const constraints: MediaStreamConstraints = {
@@ -160,7 +167,7 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
 
       // Start duration timer
       timerIntervalRef.current = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+        const elapsed = Math.floor((Date.now() - startTimeRef.current - pausedDurationRef.current) / 1000);
         setDuration(elapsed);
       }, 100);
     } catch (err) {
@@ -204,10 +211,51 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
     });
   }, [audioBlob]);
 
+  const pauseRecording = useCallback(() => {
+    const mediaRecorder = mediaRecorderRef.current;
+    
+    if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+      return;
+    }
+
+    mediaRecorder.pause();
+    setStatus('paused');
+    pauseStartTimeRef.current = Date.now();
+
+    // Pause the timer but don't clear it
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+  }, []);
+
+  const resumeRecording = useCallback(() => {
+    const mediaRecorder = mediaRecorderRef.current;
+    
+    if (!mediaRecorder || mediaRecorder.state !== 'paused') {
+      return;
+    }
+
+    mediaRecorder.resume();
+    setStatus('recording');
+    
+    // Add the paused duration to our total paused time
+    pausedDurationRef.current += (Date.now() - pauseStartTimeRef.current);
+
+    // Restart the timer
+    timerIntervalRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTimeRef.current - pausedDurationRef.current) / 1000);
+      setDuration(elapsed);
+    }, 100);
+  }, []);
+
   return {
     startRecording,
     stopRecording,
+    pauseRecording,
+    resumeRecording,
     isRecording: status === 'recording',
+    isPaused: status === 'paused',
     status,
     duration,
     fileSize,

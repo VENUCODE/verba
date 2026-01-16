@@ -22,17 +22,17 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 function createWindow(): BrowserWindow {
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth } = primaryDisplay.workAreaSize;
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
   
   mainWindow = new BrowserWindow({
-    width: 300,
-    height: 48,
+    width: 240,
+    height: 40,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
-    x: Math.floor((screenWidth - 300) / 2),
+    x: Math.floor((screenWidth - 240) / 2),
     y: 20,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -41,6 +41,21 @@ function createWindow(): BrowserWindow {
     },
     icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
+  });
+
+  // Keep window within screen bounds when moved
+  mainWindow.on('will-move', (event, newBounds) => {
+    const { x, y, width, height } = newBounds;
+    const maxX = screenWidth - width;
+    const maxY = screenHeight - height;
+    
+    const constrainedX = Math.max(0, Math.min(x, maxX));
+    const constrainedY = Math.max(0, Math.min(y, maxY));
+    
+    if (x !== constrainedX || y !== constrainedY) {
+      event.preventDefault();
+      mainWindow?.setPosition(constrainedX, constrainedY);
+    }
   });
 
   // Load the app
@@ -158,11 +173,14 @@ function setupIPC(): void {
     try {
       clipboard.writeText(text);
       
-      // Hide window to restore focus to previous app
-      mainWindow?.hide();
+      // Make window semi-transparent instead of hiding completely
+      if (mainWindow) {
+        mainWindow.setOpacity(0.3);
+        mainWindow.setIgnoreMouseEvents(true, { forward: true });
+      }
       
       // Small delay to let OS shift focus
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 150));
       
       // Simulate Ctrl+V / Cmd+V using nut-js
       const { keyboard, Key } = await import('@nut-tree-fork/nut-js');
@@ -179,25 +197,35 @@ function setupIPC(): void {
         await keyboard.releaseKey(Key.LeftControl);
       }
       
-      // Show window again after paste
+      // Restore window visibility smoothly
       setTimeout(() => {
-        mainWindow?.show();
-      }, 200);
+        if (mainWindow) {
+          mainWindow.setOpacity(1);
+          mainWindow.setIgnoreMouseEvents(false);
+        }
+      }, 300);
       
       return true;
     } catch (error: any) {
       console.error('Failed to paste text:', error);
       // Fallback: at least copy to clipboard
       clipboard.writeText(text);
-      // Show window again even on error
-      mainWindow?.show();
+      // Restore window even on error
+      if (mainWindow) {
+        mainWindow.setOpacity(1);
+        mainWindow.setIgnoreMouseEvents(false);
+      }
       throw new Error('Failed to paste text automatically. Text copied to clipboard.');
     }
   });
 
   // Window handlers
   ipcMain.handle(IPC_CHANNELS.MINIMIZE_TO_TRAY, () => {
-    mainWindow?.hide();
+    // Don't hide completely - just minimize to chip (handled by renderer)
+    // Keep window visible but collapsed
+    if (mainWindow) {
+      mainWindow.setSize(200, 10, true);
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.SHOW_WINDOW, () => {
@@ -220,6 +248,21 @@ function setupIPC(): void {
   // Set always on top handler
   ipcMain.handle(IPC_CHANNELS.SET_ALWAYS_ON_TOP, (_, flag: boolean) => {
     mainWindow?.setAlwaysOnTop(flag);
+  });
+
+  // Check if cursor is in active input field
+  ipcMain.handle(IPC_CHANNELS.CHECK_ACTIVE_INPUT, async () => {
+    try {
+      // Try to get focused element info (limited in Electron)
+      // For now, we'll assume there's an active input
+      // A better approach would be to check the focused window's active element
+      // but that requires more complex native integration
+      // In practice, we'll rely on the user clicking in a text field first
+      return true; // Simplified - always return true for now
+    } catch (error) {
+      console.error('Failed to check active input:', error);
+      return false;
+    }
   });
 }
 

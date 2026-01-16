@@ -52,27 +52,34 @@ function ExpandablePanel({ type, onClose }: ExpandablePanelProps) {
 
   if (type === 'history') {
     return (
-      <div className="flex flex-col h-full bg-white border-t border-gray-200">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200">
+      <div className="flex flex-col h-full bg-white/95 backdrop-blur-md rounded-b-lg shadow-lg border-t border-white/20 mt-2 mx-2 mb-2 pointer-events-auto">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200/50">
           <h3 className="text-sm font-semibold text-gray-800">History</h3>
-          <div className="flex gap-1">
+          <div className="flex gap-2">
             <button
               onClick={() => exportHistory('txt')}
-              className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+              className="p-1.5 hover:bg-gray-100 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={history.length === 0}
+              title="Export"
             >
-              Export
+              <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
             </button>
             <button
               onClick={clearHistory}
-              className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+              className="p-1.5 hover:bg-gray-100 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={history.length === 0}
+              title="Clear"
             >
-              Clear
+              <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
             </button>
             <button
               onClick={onClose}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              className="p-1 hover:bg-gray-100 rounded transition-colors cursor-pointer"
+              title="Close"
             >
               <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -105,7 +112,7 @@ function ExpandablePanel({ type, onClose }: ExpandablePanelProps) {
                       onClick={() => {
                         navigator.clipboard.writeText(item.text);
                       }}
-                      className="p-1 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
+                      className="p-1 hover:bg-gray-200 rounded transition-colors flex-shrink-0 cursor-pointer"
                       title="Copy"
                     >
                       <svg className="w-3 h-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -124,12 +131,13 @@ function ExpandablePanel({ type, onClose }: ExpandablePanelProps) {
 
   // Settings panel
   return (
-    <div className="flex flex-col h-full bg-white border-t border-gray-200 overflow-y-auto" style={{ maxHeight: '148px' }}>
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 sticky top-0 bg-white z-10">
+    <div className="flex flex-col h-full bg-white/95 backdrop-blur-md rounded-b-lg shadow-lg border-t border-white/20 mt-2 mx-2 mb-2 overflow-y-auto pointer-events-auto" style={{ maxHeight: '148px' }}>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200/50 sticky top-0 bg-white/95 backdrop-blur-md z-10">
         <h3 className="text-sm font-semibold text-gray-800">Settings</h3>
         <button
           onClick={onClose}
-          className="p-1 hover:bg-gray-100 rounded transition-colors"
+          className="p-1 hover:bg-gray-100 rounded transition-colors cursor-pointer"
+          title="Close"
         >
           <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

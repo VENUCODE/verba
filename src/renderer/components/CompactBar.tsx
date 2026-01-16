@@ -1,22 +1,30 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useConfigStore } from '../store/configStore';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
-import MiniVisualizer from './MiniVisualizer';
+import VerticalBarsVisualizer from './VerticalBarsVisualizer';
+import { soundManager } from '../utils/sounds';
 
 interface CompactBarProps {
   onNavigate: (page: 'home' | 'settings' | 'history') => void;
   onExpand?: () => void;
+  isCollapsed?: boolean;
+  onInteraction?: () => void;
 }
 
-function CompactBar({ onNavigate, onExpand }: CompactBarProps) {
+function CompactBar({ onNavigate, onExpand, isCollapsed = false, onInteraction }: CompactBarProps) {
   const { config, status, setStatus, setError, addToHistory, error } = useConfigStore();
+  const [showIconsDuringRecording, setShowIconsDuringRecording] = useState(false);
+  const barRef = useRef<HTMLDivElement>(null);
 
   const {
     isRecording,
+    isPaused,
     duration,
     audioStream,
     startRecording,
     stopRecording,
+    pauseRecording,
+    resumeRecording,
   } = useAudioRecorder({
     maxDuration: config.maxDuration,
     deviceId: config.selectedInputDevice
@@ -53,6 +61,7 @@ function CompactBar({ onNavigate, onExpand }: CompactBarProps) {
       if (text) {
         // Auto-paste the transcribed text
         await window.electronAPI.pasteText(text);
+        soundManager.playSuccess();
 
         // Add to history
         addToHistory({
@@ -64,26 +73,65 @@ function CompactBar({ onNavigate, onExpand }: CompactBarProps) {
 
         setStatus('idle');
       } else {
+        soundManager.playError();
         setError('No transcription returned');
       }
     } catch (err: any) {
+      soundManager.playError();
       setError(err.message || 'Transcription failed');
       setStatus('idle');
     }
   }, [config.model, duration, setStatus, setError, addToHistory]);
 
   const toggleRecording = useCallback(async () => {
-    if (isRecording) {
+    if (isRecording || isPaused) {
+      // This is the stop functionality
+      soundManager.playStop();
       const audioBlob = await stopRecording();
       if (audioBlob) {
         await handleTranscribe(audioBlob);
       }
     } else {
+      // Check if cursor is in active input before starting
+      try {
+        const hasActiveInput = await window.electronAPI.checkActiveInput();
+        if (!hasActiveInput) {
+          soundManager.playNotification();
+          setError('Please click in a text field first');
+          setTimeout(() => setError(null), 3000);
+          return;
+        }
+      } catch (err) {
+        // If check fails, proceed anyway
+        console.warn('Could not check active input:', err);
+      }
+      
+      soundManager.playStart();
       setError(null);
       setStatus('recording');
       await startRecording();
     }
-  }, [isRecording, startRecording, stopRecording, handleTranscribe, setStatus, setError]);
+  }, [isRecording, isPaused, startRecording, stopRecording, handleTranscribe, setStatus, setError]);
+
+  const handleStopRecording = useCallback(async () => {
+    if (isRecording || isPaused) {
+      soundManager.playStop();
+      const audioBlob = await stopRecording();
+      if (audioBlob) {
+        await handleTranscribe(audioBlob);
+      }
+    }
+  }, [isRecording, isPaused, stopRecording, handleTranscribe]);
+
+  const togglePauseResume = useCallback(() => {
+    if (isPaused) {
+      soundManager.playStart();
+      resumeRecording();
+    } else if (isRecording) {
+      soundManager.playStop();
+      pauseRecording();
+    }
+  }, [isPaused, isRecording, pauseRecording, resumeRecording]);
 
   // Listen for global hotkey
   useEffect(() => {
@@ -101,8 +149,13 @@ function CompactBar({ onNavigate, onExpand }: CompactBarProps) {
   useEffect(() => {
     if (isRecording) {
       setStatus('recording');
+      setShowIconsDuringRecording(false); // Reset when starting recording
+    } else if (isPaused) {
+      setStatus('recording'); // Keep showing as recording state visually
+    } else {
+      setShowIconsDuringRecording(false); // Reset when stopping
     }
-  }, [isRecording, setStatus]);
+  }, [isRecording, isPaused, setStatus]);
 
   // Handle panel expansion
   const handlePanelToggle = useCallback((panel: 'settings' | 'history') => {
@@ -122,90 +175,246 @@ function CompactBar({ onNavigate, onExpand }: CompactBarProps) {
     }
   };
 
+  // Handle interactions
+  useEffect(() => {
+    if (onInteraction) {
+      const handleInteraction = () => onInteraction();
+      window.addEventListener('mousemove', handleInteraction);
+      window.addEventListener('click', handleInteraction);
+      return () => {
+        window.removeEventListener('mousemove', handleInteraction);
+        window.removeEventListener('click', handleInteraction);
+      };
+    }
+  }, [onInteraction]);
+
+  // Resize window to fit content dynamically
+  useEffect(() => {
+    if (isCollapsed) return;
+    
+    const resizeToContent = () => {
+      if (barRef.current) {
+        // Use offsetWidth which includes padding and borders
+        const contentWidth = barRef.current.offsetWidth;
+        // Add extra padding for window borders and rounding - reduce minimum width
+        const targetWidth = Math.max(120, contentWidth + 8);
+        window.electronAPI.resizeWindow(targetWidth, 40);
+      }
+    };
+
+    // Resize after a short delay to ensure DOM is updated
+    const timeoutId = setTimeout(resizeToContent, 100);
+    return () => clearTimeout(timeoutId);
+  }, [isCollapsed, status, isRecording, isPaused, showIconsDuringRecording]);
+
+  if (isCollapsed) {
+    return (
+      <div 
+        className="flex items-center justify-center w-full h-full rounded-lg shadow-xl cursor-pointer hover:opacity-90 transition-opacity drag-region relative overflow-hidden backdrop-blur-md"
+        style={{
+          background: 'rgba(20, 25, 35, 0.6)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(10px)'
+        }}
+        onClick={() => {
+          onInteraction?.();
+        }}
+        title="Click to expand"
+      >
+        {/* Glass morphic animated gradient */}
+        <div 
+          className="absolute inset-0 opacity-30 rounded-lg"
+          style={{
+            background: 'linear-gradient(45deg, rgba(59, 130, 246, 0.3), rgba(147, 51, 234, 0.3))',
+            animation: 'pulse 2s ease-in-out infinite alternate'
+          }}
+        ></div>
+        <div className="relative z-10 w-full h-1 bg-white/30 rounded-full mx-2 shadow-sm"></div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col w-full h-full bg-white/90 backdrop-blur-md rounded-lg shadow-lg border border-gray-200/50 overflow-hidden">
+    <div className="flex flex-col h-full bg-black rounded-lg shadow-xl border border-white/10 overflow-visible">
       {/* Main Bar */}
-      <div className="flex items-center gap-2 px-3 py-2 h-12 drag-region">
-        {/* Drag Handle */}
-        <div className="flex gap-1 cursor-move no-drag">
-          <div className="w-1 h-1 rounded-full bg-gray-400"></div>
-          <div className="w-1 h-1 rounded-full bg-gray-400"></div>
-          <div className="w-1 h-1 rounded-full bg-gray-400"></div>
+      <div 
+        ref={barRef}
+        className="flex items-center gap-2 px-4 py-1.5 h-10 overflow-visible w-fit"
+        onClick={(e) => {
+          // Show icons when clicking on bar during recording/paused
+          if ((isRecording || isPaused) && !showIconsDuringRecording && e.target === e.currentTarget) {
+            setShowIconsDuringRecording(true);
+            setTimeout(() => setShowIconsDuringRecording(false), 5000); // Hide after 5 seconds
+          }
+        }}
+      >
+
+        {/* Drag Handle - 6 dots in 2x3 grid */}
+        <div 
+          className="flex items-center justify-center w-6 h-6 mr-2 drag-region hover:bg-white/10 rounded transition-colors" 
+          style={{ cursor: 'move' }}
+          title="Drag to move"
+        >
+          <div className="flex gap-1">
+            {/* Left column */}
+            <div className="flex flex-col gap-0.5">
+              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
+              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
+              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
+            </div>
+            {/* Right column */}
+            <div className="flex flex-col gap-0.5">
+              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
+              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
+              <div className="w-1 h-1 bg-white/60 rounded-full"></div>
+            </div>
+          </div>
         </div>
 
-        {/* Record Button */}
-        <button
-          onClick={toggleRecording}
-          disabled={status === 'transcribing'}
-          className={`
-            w-8 h-8 rounded-full flex items-center justify-center
-            transition-all duration-200 flex-shrink-0
-            ${getStatusColor()}
-            ${status === 'transcribing' ? 'cursor-not-allowed opacity-50' : 'hover:scale-110 active:scale-95'}
-            focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300
-          `}
-        >
-          {status === 'recording' ? (
-            <div className="w-3 h-3 bg-white rounded-sm"></div>
-          ) : status === 'transcribing' ? (
-            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-          ) : (
-            <div className="w-0 h-0 border-l-[6px] border-l-white border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent ml-0.5"></div>
-          )}
-        </button>
+        {/* Record Button - Replace with Visualizer when idle */}
+        {status === 'idle' && !isRecording && !isPaused ? (
+          <div 
+            onClick={toggleRecording}
+            className="h-8 cursor-pointer flex items-center justify-center no-drag"
+            title="Click to start recording"
+          >
+            <VerticalBarsVisualizer audioStream={null} isRecording={false} barCount={18} height={24} />
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 no-drag">
+            {/* Pause/Resume Button */}
+            {(isRecording || isPaused) && (
+              <button
+                onClick={togglePauseResume}
+                disabled={status === 'transcribing'}
+                className={`
+                  w-7 h-7 rounded-full flex items-center justify-center
+                  transition-all duration-200 flex-shrink-0 cursor-pointer no-drag
+                  ${isPaused ? 'bg-yellow-500' : 'bg-blue-500'}
+                  ${status === 'transcribing' ? 'cursor-not-allowed opacity-50' : 'hover:scale-110 active:scale-95'}
+                  focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/50
+                `}
+                title={isPaused ? "Resume recording" : "Pause recording"}
+              >
+                {isPaused ? (
+                  /* Play icon */
+                  <div className="w-0 h-0 border-l-[5px] border-l-white border-t-[3px] border-t-transparent border-b-[3px] border-b-transparent ml-0.5"></div>
+                ) : (
+                  /* Pause icon */
+                  <div className="flex gap-0.5">
+                    <div className="w-1 h-2.5 bg-white rounded-sm"></div>
+                    <div className="w-1 h-2.5 bg-white rounded-sm"></div>
+                  </div>
+                )}
+              </button>
+            )}
+            
+            {/* Stop Button */}
+            <button
+              onClick={handleStopRecording}
+              disabled={status === 'transcribing'}
+              className={`
+                w-7 h-7 rounded-full flex items-center justify-center
+                transition-all duration-200 flex-shrink-0 cursor-pointer no-drag
+                ${getStatusColor()}
+                ${status === 'transcribing' ? 'cursor-not-allowed opacity-50' : 'hover:scale-110 active:scale-95'}
+                focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/50
+              `}
+              title="Stop recording"
+            >
+              {status === 'transcribing' ? (
+                <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <div className="w-2.5 h-2.5 bg-white rounded-sm"></div>
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Status/Timer */}
-        <div className="flex-1 flex items-center gap-2 min-w-0">
-          {isRecording && (
+        <div className="flex items-center gap-1.5 no-drag">
+          {(isRecording || isPaused) && (
             <>
-              <span className="text-xs font-mono text-gray-700 whitespace-nowrap">
-                {formatDuration(duration)}
+              <span className={`text-[10px] font-mono whitespace-nowrap ${isPaused ? 'text-yellow-300' : 'text-white/90'}`}>
+                {formatDuration(duration)} {isPaused && '(Paused)'}
               </span>
-              <div className="flex-1 min-w-[60px] h-6">
-                <MiniVisualizer audioStream={audioStream} isRecording={isRecording} />
+              <div className="h-8">
+                <VerticalBarsVisualizer audioStream={audioStream} isRecording={isRecording && !isPaused} barCount={18} height={32} />
               </div>
             </>
           )}
           {status === 'transcribing' && (
-            <span className="text-xs text-gray-600">Transcribing...</span>
-          )}
-          {status === 'idle' && !isRecording && (
-            <span className="text-xs text-gray-500 truncate">
-              {config.hotkey.replace('CommandOrControl', 'Ctrl').replace('+', ' + ')}
-            </span>
+            <span className="text-[10px] text-white/80">Transcribing...</span>
           )}
         </div>
 
-        {/* History Button */}
-        <button
-          onClick={() => handlePanelToggle('history')}
-          className="p-1.5 hover:bg-gray-100 rounded transition-colors no-drag"
-          title="History"
-        >
-          <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
+        {/* Question mark icon with styled tooltip - Hide during recording unless explicitly shown */}
+        {((!isRecording && !isPaused) || showIconsDuringRecording) && (
+          <div className="relative group/help no-drag">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+              className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer relative z-10 ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
+            >
+              <svg className="w-3.5 h-3.5 text-white/60 hover:text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+            {/* Styled tooltip - positioned below the icon */}
+            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-3 py-2 bg-gray-900 text-white text-[10px] rounded-lg shadow-2xl border border-white/30 whitespace-nowrap opacity-0 group-hover/help:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999] min-w-[120px]">
+              <div className="text-white/70 font-medium mb-1 text-[9px] uppercase tracking-wider">Hotkey</div>
+              <div className="text-white font-mono font-bold text-xs">
+                {config.hotkey.replace('CommandOrControl', 'Ctrl').replace('+', ' + ')}
+              </div>
+              {/* Arrow pointing up */}
+              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 border-l border-t border-white/30 transform rotate-45"></div>
+            </div>
+          </div>
+        )}
 
-        {/* Settings Button */}
-        <button
-          onClick={() => handlePanelToggle('settings')}
-          className="p-1.5 hover:bg-gray-100 rounded transition-colors no-drag"
-          title="Settings"
-        >
-          <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </button>
+        {/* History Button - Hide during recording unless explicitly shown */}
+        {((!isRecording && !isPaused) || showIconsDuringRecording) && (
+          <button
+            onClick={() => handlePanelToggle('history')}
+            className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
+            title="History"
+          >
+            <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+        )}
 
-        {/* Close/Minimize Button */}
+        {/* Settings Button - Hide during recording unless explicitly shown */}
+        {((!isRecording && !isPaused) || showIconsDuringRecording) && (
+          <button
+            onClick={() => handlePanelToggle('settings')}
+            className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
+            title="Settings"
+          >
+            <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        )}
+
+        {/* Minimize to Chip Button */}
         <button
-          onClick={() => window.electronAPI.minimizeToTray()}
-          className="p-1.5 hover:bg-gray-100 rounded transition-colors no-drag"
-          title="Minimize"
+          onClick={(e) => {
+            e.stopPropagation();
+            // Always collapse to chip, regardless of panel state
+            onInteraction?.();
+            // Signal to parent to collapse
+            if (onExpand) {
+              onExpand();
+            }
+          }}
+          className="p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer"
+          title="Minimize to chip"
         >
-          <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
           </svg>
         </button>
@@ -213,7 +422,7 @@ function CompactBar({ onNavigate, onExpand }: CompactBarProps) {
 
       {/* Error Message */}
       {error && (
-        <div className="px-3 py-1.5 bg-red-50 text-red-600 text-xs border-t border-red-100">
+        <div className="px-3 py-1.5 bg-red-900/80 text-red-200 text-xs border-t border-red-800/50">
           {error}
         </div>
       )}

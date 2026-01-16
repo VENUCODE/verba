@@ -15,6 +15,7 @@ const IPC_CHANNELS = {
   QUIT_APP: 'window:quit',
   RESIZE_WINDOW: 'window:resize',
   SET_ALWAYS_ON_TOP: 'window:setAlwaysOnTop',
+  CHECK_ACTIVE_INPUT: 'system:checkActiveInput',
 } as const;
 
 // Type for AppConfig (inline to avoid import)
@@ -58,6 +59,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_CHANNELS.RESIZE_WINDOW, { width, height }),
   setAlwaysOnTop: (flag: boolean): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.SET_ALWAYS_ON_TOP, flag),
+  checkActiveInput: (): Promise<boolean> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CHECK_ACTIVE_INPUT),
 
   // Event listeners
   onHotkeyTriggered: (callback: () => void) => {
@@ -90,6 +93,7 @@ export interface ElectronAPI {
   quitApp: () => Promise<void>;
   resizeWindow: (width: number, height: number) => Promise<void>;
   setAlwaysOnTop: (flag: boolean) => Promise<void>;
+  checkActiveInput: () => Promise<boolean>;
   onHotkeyTriggered: (callback: () => void) => () => void;
   onTranscriptionChunk: (callback: (chunk: string) => void) => () => void;
 }

@@ -12,6 +12,8 @@ function App() {
   
   const [isLoading, setIsLoading] = useState(true);
   const [expandedPanel, setExpandedPanel] = useState<'settings' | 'history' | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [lastInteraction, setLastInteraction] = useState(Date.now());
 
   useEffect(() => {
     const init = async () => {
@@ -22,13 +24,47 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
 
+  // Auto-collapse after 1 minute of inactivity
+  useEffect(() => {
+    if (isFirstLaunch || !config.apiKey || expandedPanel) return;
+
+    const checkCollapse = () => {
+      const timeSinceInteraction = Date.now() - lastInteraction;
+      if (timeSinceInteraction > 60000 && !isCollapsed) {
+        // Collapse to chip (120px width, 10px height)
+        setIsCollapsed(true);
+        window.electronAPI.resizeWindow(120, 10);
+      }
+    };
+
+    const interval = setInterval(checkCollapse, 1000);
+    return () => clearInterval(interval);
+  }, [lastInteraction, isCollapsed, isFirstLaunch, config.apiKey, expandedPanel]);
+
+  // Track interactions
+  useEffect(() => {
+    const handleInteraction = () => {
+      setLastInteraction(Date.now());
+      if (isCollapsed) {
+        setIsCollapsed(false);
+        // CompactBar will resize itself dynamically
+      }
+    };
+
+    window.addEventListener('mousemove', handleInteraction);
+    window.addEventListener('click', handleInteraction);
+    return () => {
+      window.removeEventListener('mousemove', handleInteraction);
+      window.removeEventListener('click', handleInteraction);
+    };
+  }, [isCollapsed]);
+
   // Resize window for setup screen
   useEffect(() => {
     if (isFirstLaunch || !config.apiKey) {
       window.electronAPI.resizeWindow(400, 500);
-    } else {
-      window.electronAPI.resizeWindow(300, 48);
     }
+    // Note: CompactBar now handles its own dynamic sizing
   }, [isFirstLaunch, config.apiKey]);
 
   // Listen for hotkey trigger
@@ -46,21 +82,47 @@ function App() {
 
   // Handle panel expansion/collapse - use useCallback to ensure consistent hook order
   const handleExpand = useCallback(() => {
+    // If panel is expanded, close it first
     if (expandedPanel) {
       setExpandedPanel(null);
-      window.electronAPI.resizeWindow(300, 48);
+      setLastInteraction(Date.now());
+      if (isCollapsed) {
+        window.electronAPI.resizeWindow(120, 10);
+      }
+      // CompactBar will resize itself dynamically when expanded
+    } else {
+      // Toggle collapse state
+      setIsCollapsed(!isCollapsed);
+      setLastInteraction(Date.now());
+      if (!isCollapsed) {
+        window.electronAPI.resizeWindow(120, 10);
+      }
+      // CompactBar will resize itself dynamically when expanded
     }
-  }, [expandedPanel]);
+  }, [expandedPanel, isCollapsed]);
+
+  // Handle direct collapse (from minimize button)
+  const handleCollapse = useCallback(() => {
+    setExpandedPanel(null);
+    setIsCollapsed(true);
+    setLastInteraction(Date.now());
+    window.electronAPI.resizeWindow(120, 10);
+  }, []);
 
   const handlePanelToggle = useCallback((panel: 'settings' | 'history') => {
+    setLastInteraction(Date.now());
     if (expandedPanel === panel) {
       setExpandedPanel(null);
-      window.electronAPI.resizeWindow(300, 48);
+      if (isCollapsed) {
+        window.electronAPI.resizeWindow(120, 10);
+      }
+      // CompactBar will resize itself dynamically when expanded
     } else {
+      setIsCollapsed(false);
       setExpandedPanel(panel);
-      window.electronAPI.resizeWindow(300, 200);
+      window.electronAPI.resizeWindow(240, 200);
     }
-  }, [expandedPanel]);
+  }, [expandedPanel, isCollapsed]);
 
   if (isLoading) {
     return (
@@ -76,22 +138,42 @@ function App() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-transparent">
+    <div className={`h-full flex flex-col bg-transparent relative transition-all duration-400 overflow-visible ${isCollapsed ? 'chip-state' : ''}`}>
       <CompactBar
         onNavigate={(page) => {
           if (page === 'settings') handlePanelToggle('settings');
           else if (page === 'history') handlePanelToggle('history');
         }}
-        onExpand={handleExpand}
+        onExpand={handleCollapse}
+        isCollapsed={isCollapsed}
+        onInteraction={() => setLastInteraction(Date.now())}
       />
       {expandedPanel && (
-        <ExpandablePanel
-          type={expandedPanel}
-          onClose={() => {
-            setExpandedPanel(null);
-            window.electronAPI.resizeWindow(300, 48);
-          }}
-        />
+        <>
+          {/* Overlay to allow clicking outside */}
+          <div 
+            className="absolute inset-0 pointer-events-auto -z-10"
+            onClick={() => {
+              setExpandedPanel(null);
+              setLastInteraction(Date.now());
+              if (isCollapsed) {
+                window.electronAPI.resizeWindow(120, 10);
+              }
+              // CompactBar will resize itself dynamically when expanded
+            }}
+          />
+          <ExpandablePanel
+            type={expandedPanel}
+            onClose={() => {
+              setExpandedPanel(null);
+              setLastInteraction(Date.now());
+              if (isCollapsed) {
+                window.electronAPI.resizeWindow(120, 10);
+              }
+              // CompactBar will resize itself dynamically when expanded
+            }}
+          />
+        </>
       )}
     </div>
   );
