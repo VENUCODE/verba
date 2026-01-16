@@ -14,7 +14,7 @@ const DEFAULT_CONFIG: AppConfig = {
   temperature: 0,
 };
 
-const HISTORY_STORAGE_KEY = 'voice-transcriber-history-v1';
+export const HISTORY_STORAGE_KEY = 'voice-transcriber-history-v1';
 
 const readHistoryFromStorage = (): TranscriptionHistory[] => {
   if (typeof window === 'undefined') {

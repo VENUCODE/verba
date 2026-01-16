@@ -12,5 +12,6 @@ Keep the compact recorder window tightly bound to its visible content even while
 - [x] Add explicit min/max content bounds and a drag-guard IPC handshake in the main process.
 - [x] Update `useWindowAutoSize` + `App` to cooperate with the drag guard, clamp measurements, and debounce post-drag resizes.
 - [x] Tighten `.app-shell` and `.app-root` styles so the DOM never exceeds the intended footprint.
+- [x] Normalize DPI scaling + collapsed/expanded base dimensions so the 160x44 chip and 216x56 compact bar map 1:1 to the window.
 - [ ] Verify by dragging the bar against all edges for 30+ seconds with debug borders visible and capture screenshots/logs.
 - [ ] Record test evidence + final status back into this plan.

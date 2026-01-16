@@ -26,13 +26,10 @@ function CompactBar({
 
   const {
     isRecording,
-    isPaused,
     duration,
     audioStream,
     startRecording,
     stopRecording,
-    pauseRecording,
-    resumeRecording,
   } = useAudioRecorder({
     maxDuration: config.maxDuration,
     deviceId: config.selectedInputDevice
@@ -92,7 +89,7 @@ function CompactBar({
   }, [config.model, duration, setStatus, setError, addToHistory]);
 
   const toggleRecording = useCallback(async () => {
-    if (isRecording || isPaused) {
+    if (isRecording) {
       // This is the stop functionality
       soundManager.playStop();
       const audioBlob = await stopRecording();
@@ -119,27 +116,18 @@ function CompactBar({
       setStatus('recording');
       await startRecording();
     }
-  }, [isRecording, isPaused, startRecording, stopRecording, handleTranscribe, setStatus, setError]);
+  }, [isRecording, startRecording, stopRecording, handleTranscribe, setStatus, setError]);
 
   const handleStopRecording = useCallback(async () => {
-    if (isRecording || isPaused) {
-      soundManager.playStop();
-      const audioBlob = await stopRecording();
-      if (audioBlob) {
-        await handleTranscribe(audioBlob);
-      }
+    if (!isRecording) {
+      return;
     }
-  }, [isRecording, isPaused, stopRecording, handleTranscribe]);
-
-  const togglePauseResume = useCallback(() => {
-    if (isPaused) {
-      soundManager.playStart();
-      resumeRecording();
-    } else if (isRecording) {
-      soundManager.playStop();
-      pauseRecording();
+    soundManager.playStop();
+    const audioBlob = await stopRecording();
+    if (audioBlob) {
+      await handleTranscribe(audioBlob);
     }
-  }, [isPaused, isRecording, pauseRecording, resumeRecording]);
+  }, [isRecording, stopRecording, handleTranscribe]);
 
   // Listen for global hotkey
   useEffect(() => {
@@ -158,12 +146,10 @@ function CompactBar({
     if (isRecording) {
       setStatus('recording');
       setShowIconsDuringRecording(false); // Reset when starting recording
-    } else if (isPaused) {
-      setStatus('recording'); // Keep showing as recording state visually
     } else {
       setShowIconsDuringRecording(false); // Reset when stopping
     }
-  }, [isRecording, isPaused, setStatus]);
+  }, [isRecording, setStatus]);
 
   // Handle panel expansion
   const handlePanelToggle = useCallback((panel: 'settings' | 'history') => {
@@ -183,27 +169,18 @@ function CompactBar({
     }
   };
 
-  // Handle interactions
-  useEffect(() => {
-    if (onInteraction) {
-      const handleInteraction = () => onInteraction();
-      window.addEventListener('mousemove', handleInteraction);
-      window.addEventListener('click', handleInteraction);
-      return () => {
-        window.removeEventListener('mousemove', handleInteraction);
-        window.removeEventListener('click', handleInteraction);
-      };
-    }
-  }, [onInteraction]);
+  const handleHideWindow = useCallback(() => {
+    window.electronAPI.hideMainWindow();
+  }, []);
 
   if (isCollapsed) {
     return (
-      <div 
-        className="flex items-center justify-center w-full h-full rounded-lg shadow-xl cursor-pointer hover:opacity-90 transition-opacity drag-region relative overflow-hidden backdrop-blur-md"
+      <div
+        className="drag-region relative flex h-full w-full items-center justify-center rounded-2xl shadow-xl cursor-pointer hover:opacity-95 transition-opacity duration-200 overflow-hidden"
         style={{
-          background: 'rgba(20, 25, 35, 0.6)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(10px)'
+          background: 'rgba(16, 20, 35, 0.75)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          backdropFilter: 'blur(14px)',
         }}
         onClick={() => {
           onInteraction?.();
@@ -218,27 +195,28 @@ function CompactBar({
         }}
         title="Click to expand"
       >
-        {/* Glass morphic animated gradient */}
-        <div 
-          className="absolute inset-0 opacity-30 rounded-lg"
+        <div
+          className="absolute inset-1 rounded-2xl opacity-40"
           style={{
-            background: 'linear-gradient(45deg, rgba(59, 130, 246, 0.3), rgba(147, 51, 234, 0.3))',
-            animation: 'pulse 2s ease-in-out infinite alternate'
+            background: 'linear-gradient(120deg, rgba(59,130,246,0.35), rgba(147,51,234,0.35))',
+            animation: 'pulse 2s ease-in-out infinite alternate',
           }}
         ></div>
-        <div className="relative z-10 w-full h-1 bg-white/30 rounded-full mx-2 shadow-sm"></div>
+        <div className="relative z-10 flex w-full items-center justify-center px-4">
+          <div className="h-1.5 w-24 rounded-full bg-white/40 shadow-sm"></div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-black rounded-lg shadow-xl border border-white/10 overflow-visible">
+    <div className="flex w-full flex-col rounded-2xl border border-white/12 bg-black/90 shadow-2xl overflow-hidden">
       {/* Main Bar */}
       <div 
-        className="flex items-center gap-2 px-4 py-1.5 h-10 overflow-visible w-fit"
+        className="flex w-full items-center gap-2 px-4 py-2 min-h-[44px] overflow-visible"
         onClick={(e) => {
-          // Show icons when clicking on bar during recording/paused
-          if ((isRecording || isPaused) && !showIconsDuringRecording && e.target === e.currentTarget) {
+          // Show icons when clicking on bar during recording
+          if (isRecording && !showIconsDuringRecording && e.target === e.currentTarget) {
             setShowIconsDuringRecording(true);
             setTimeout(() => setShowIconsDuringRecording(false), 5000); // Hide after 5 seconds
           }
@@ -276,7 +254,7 @@ function CompactBar({
         </div>
 
         {/* Record Button - Replace with Visualizer when idle */}
-        {status === 'idle' && !isRecording && !isPaused ? (
+        {status === 'idle' && !isRecording ? (
           <div 
             onClick={toggleRecording}
             className="h-8 cursor-pointer flex items-center justify-center no-drag"
@@ -286,42 +264,14 @@ function CompactBar({
           </div>
         ) : (
           <div className="flex items-center gap-1 no-drag">
-            {/* Pause/Resume Button */}
-            {(isRecording || isPaused) && (
-              <button
-                onClick={togglePauseResume}
-                disabled={status === 'transcribing'}
-                className={`
-                  w-7 h-7 rounded-full flex items-center justify-center
-                  transition-all duration-200 flex-shrink-0 cursor-pointer no-drag
-                  ${isPaused ? 'bg-yellow-500' : 'bg-blue-500'}
-                  ${status === 'transcribing' ? 'cursor-not-allowed opacity-50' : 'hover:scale-110 active:scale-95'}
-                  focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/50
-                `}
-                title={isPaused ? "Resume recording" : "Pause recording"}
-              >
-                {isPaused ? (
-                  /* Play icon */
-                  <div className="w-0 h-0 border-l-[5px] border-l-white border-t-[3px] border-t-transparent border-b-[3px] border-b-transparent ml-0.5"></div>
-                ) : (
-                  /* Pause icon */
-                  <div className="flex gap-0.5">
-                    <div className="w-1 h-2.5 bg-white rounded-sm"></div>
-                    <div className="w-1 h-2.5 bg-white rounded-sm"></div>
-                  </div>
-                )}
-              </button>
-            )}
-            
-            {/* Stop Button */}
             <button
               onClick={handleStopRecording}
-              disabled={status === 'transcribing'}
+              disabled={!isRecording}
               className={`
                 w-7 h-7 rounded-full flex items-center justify-center
                 transition-all duration-200 flex-shrink-0 cursor-pointer no-drag
                 ${getStatusColor()}
-                ${status === 'transcribing' ? 'cursor-not-allowed opacity-50' : 'hover:scale-110 active:scale-95'}
+                ${!isRecording ? 'cursor-not-allowed opacity-50' : 'hover:scale-110 active:scale-95'}
                 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/50
               `}
               title="Stop recording"
@@ -337,13 +287,13 @@ function CompactBar({
 
         {/* Status/Timer */}
         <div className="flex items-center gap-1.5 no-drag">
-          {(isRecording || isPaused) && (
+          {isRecording && (
             <>
-              <span className={`text-[10px] font-mono whitespace-nowrap ${isPaused ? 'text-yellow-300' : 'text-white/90'}`}>
-                {formatDuration(duration)} {isPaused && '(Paused)'}
+              <span className="text-[10px] font-mono whitespace-nowrap text-white/90">
+                {formatDuration(duration)}
               </span>
               <div className="h-8">
-                <VerticalBarsVisualizer audioStream={audioStream} isRecording={isRecording && !isPaused} barCount={18} height={32} />
+                <VerticalBarsVisualizer audioStream={audioStream} isRecording={isRecording} barCount={18} height={32} />
               </div>
             </>
           )}
@@ -353,7 +303,7 @@ function CompactBar({
         </div>
 
         {/* Question mark icon with styled tooltip - Hide during recording unless explicitly shown */}
-        {((!isRecording && !isPaused) || showIconsDuringRecording) && (
+        {((!isRecording) || showIconsDuringRecording) && (
           <div className="relative group/help no-drag">
             <button
               onClick={(e) => {
@@ -378,7 +328,7 @@ function CompactBar({
         )}
 
         {/* History Button - Hide during recording unless explicitly shown */}
-        {((!isRecording && !isPaused) || showIconsDuringRecording) && (
+        {((!isRecording) || showIconsDuringRecording) && (
           <button
             onClick={() => handlePanelToggle('history')}
             className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
@@ -391,7 +341,7 @@ function CompactBar({
         )}
 
         {/* Settings Button - Hide during recording unless explicitly shown */}
-        {((!isRecording && !isPaused) || showIconsDuringRecording) && (
+        {((!isRecording) || showIconsDuringRecording) && (
           <button
             onClick={() => handlePanelToggle('settings')}
             className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
@@ -420,6 +370,19 @@ function CompactBar({
         >
           <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+          </svg>
+        </button>
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleHideWindow();
+          }}
+          className="p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer"
+          title="Hide to tray"
+        >
+          <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M6 18L18 6" />
           </svg>
         </button>
       </div>

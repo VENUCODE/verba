@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { useConfigStore } from '../store/configStore';
+import { useConfigStore, HISTORY_STORAGE_KEY } from '../store/configStore';
 import { HOTKEY_OPTIONS, MODEL_OPTIONS, DURATION_OPTIONS } from '../constants';
 import { WhisperModel } from '../../shared/types';
 
@@ -18,6 +18,18 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
     loadConfig();
     hydrateHistory();
   }, [hydrateHistory, loadConfig]);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === HISTORY_STORAGE_KEY) {
+        hydrateHistory();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [hydrateHistory]);
 
   useEffect(() => {
     setLocalConfig(config);
@@ -208,14 +220,16 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
 
   return (
     <div className="w-full h-full bg-[#040713] text-white flex flex-col">
-      <header className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+      <header className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5 backdrop-blur-xl">
         <div>
-          <p className="text-2xl font-black tracking-tight">Voxify Console</p>
-          <p className="text-xs text-white/50">Control Center</p>
+          <p className="text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-fuchsia-400 to-violet-500">
+            Voxify Console
+          </p>
+          <p className="text-[11px] uppercase tracking-[0.35em] text-white/60">Control Center</p>
         </div>
         <button
           onClick={() => window.electronAPI.closePanelWindow()}
-          className="p-2 rounded-full hover:bg-white/10 transition"
+          className="p-2 rounded-full hover:bg-white/10 transition border border-white/10"
           title="Close"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -224,13 +238,15 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
         </button>
       </header>
 
-      <div className="flex gap-2 px-5 pt-3 border-b border-white/10">
+      <div className="flex gap-3 px-6 pt-4 border-b border-white/10">
         {(['settings', 'history'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-semibold rounded-t-xl ${
-              activeTab === tab ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white'
+            className={`px-4 py-2 text-sm font-semibold rounded-full transition-all duration-200 ${
+              activeTab === tab
+                ? 'bg-white text-[#040713] shadow-lg shadow-white/20'
+                : 'text-white/60 hover:text-white hover:bg-white/10'
             }`}
           >
             {tab === 'settings' ? 'Settings' : 'History'}
@@ -238,7 +254,7 @@ const PanelWindow: React.FC<PanelWindowProps> = ({ initialTab }) => {
         ))}
       </div>
 
-      <main className="flex-1 px-5 py-5 overflow-hidden">
+      <main className="flex-1 px-6 py-5 overflow-hidden">
         {activeTab === 'settings' ? renderSettings() : renderHistory()}
       </main>
     </div>

@@ -53,7 +53,7 @@ function TranscriptionHistory({ history, onClear, onExport }: TranscriptionHisto
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full w-full">
       {/* Header */}
       <div className="px-4 py-3 border-b border-surface-200 bg-white">
         <h2 className="text-lg font-semibold text-surface-800 mb-3">

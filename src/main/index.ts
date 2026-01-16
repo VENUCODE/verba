@@ -32,6 +32,10 @@ const WINDOW_LIMITS = {
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+// Normalize DPI scaling to keep renderer + BrowserWindow sizes in sync
+app.commandLine.appendSwitch('high-dpi-support', '1');
+app.commandLine.appendSwitch('force-device-scale-factor', '1');
+
 function createWindow(): BrowserWindow {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
@@ -42,6 +46,7 @@ function createWindow(): BrowserWindow {
     useContentSize: true,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
     alwaysOnTop: true,
     resizable: true,
     skipTaskbar: true,
@@ -317,8 +322,8 @@ function setupIPC(): void {
     // Don't hide completely - just minimize to chip (handled by renderer)
     // Keep window visible but collapsed
     if (mainWindow) {
-      const width = 200;
-      const height = 10;
+      const width = WINDOW_LIMITS.MIN_WIDTH;
+      const height = WINDOW_LIMITS.MIN_HEIGHT;
       mainWindow.setContentSize(width, height, true);
       lastRequestedWindowSize = { width, height };
     }

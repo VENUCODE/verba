@@ -5,10 +5,12 @@ import CompactBar from './components/CompactBar';
 import { useWindowAutoSize } from './hooks/useWindowAutoSize';
 import PanelWindow from './pages/PanelWindow';
 
-type Page = 'home' | 'settings' | 'history';
+const CHIP_WIDTH = 160;
+const CHIP_HEIGHT = 44;
+const EXPANDED_BASE_WIDTH = 216;
+const EXPANDED_BASE_HEIGHT = 56;
 
 function App() {
-  // Always call hooks in the same order
   const { isFirstLaunch, loadConfig, config } = useConfigStore();
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const viewMode = searchParams.get('view') === 'panel' ? 'panel' : 'compact';
@@ -20,12 +22,13 @@ function App() {
   const contentRef = useRef<HTMLDivElement>(null);
 
   const { forceResize, notifyDragStart, notifyDragEnd } = useWindowAutoSize(contentRef, {
-    minWidth: 160,
+    minWidth: EXPANDED_BASE_WIDTH,
     maxWidth: 420,
-    minHeight: 44,
-    maxHeight: 160,
-    debounceMs: 100,
-    changeThreshold: 6,
+    minHeight: EXPANDED_BASE_HEIGHT,
+    maxHeight: 220,
+    debounceMs: 80,
+    changeThreshold: 3,
+    padding: 0,
     enabled: viewMode === 'compact' && !isCollapsed && !(isFirstLaunch || !config.apiKey),
   });
 
@@ -34,15 +37,6 @@ function App() {
       forceResize();
     });
   }, [forceResize]);
-
-  const resizeToContent = useCallback(() => {
-    if (!contentRef.current) return;
-    const width = Math.round(contentRef.current.offsetWidth);
-    const height = Math.round(contentRef.current.offsetHeight);
-    if (width && height) {
-      window.electronAPI.resizeWindow(width, height);
-    }
-  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -60,9 +54,8 @@ function App() {
     const checkCollapse = () => {
       const timeSinceInteraction = Date.now() - lastInteraction;
       if (timeSinceInteraction > 60000 && !isCollapsed) {
-        // Collapse to chip (120px width, 10px height)
         setIsCollapsed(true);
-        window.electronAPI.resizeWindow(120, 10);
+        void window.electronAPI.resizeWindow(CHIP_WIDTH, CHIP_HEIGHT);
       }
     };
 
@@ -77,9 +70,10 @@ function App() {
       setLastInteraction(Date.now());
       if (isCollapsed) {
         setIsCollapsed(false);
-        requestAnimationFrame(() => {
-          resizeToContent();
-        });
+        void window.electronAPI.resizeWindow(EXPANDED_BASE_WIDTH, EXPANDED_BASE_HEIGHT);
+        setTimeout(() => {
+          requestResize();
+        }, 0);
       }
     };
 
@@ -89,7 +83,7 @@ function App() {
       window.removeEventListener('mousemove', handleInteraction);
       window.removeEventListener('click', handleInteraction);
     };
-  }, [isCollapsed, resizeToContent, viewMode]);
+  }, [isCollapsed, requestResize, viewMode]);
 
   useEffect(() => {
     if (viewMode !== 'compact') return;
@@ -123,15 +117,15 @@ function App() {
   const handleCollapse = useCallback(() => {
     setIsCollapsed(true);
     setLastInteraction(Date.now());
-    window.electronAPI.resizeWindow(120, 10);
+    void window.electronAPI.resizeWindow(CHIP_WIDTH, CHIP_HEIGHT);
   }, []);
 
   const handleOpenPanel = useCallback((panel: 'settings' | 'history') => {
     setLastInteraction(Date.now());
     setIsCollapsed(false);
-    resizeToContent();
-    window.electronAPI.openPanelWindow(panel);
-  }, [resizeToContent]);
+    setTimeout(() => requestResize(), 0);
+    void window.electronAPI.openPanelWindow(panel);
+  }, [requestResize]);
 
   const handleDragStart = useCallback(() => {
     window.electronAPI.setDragState(true);
