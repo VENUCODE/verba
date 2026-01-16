@@ -9,6 +9,7 @@ interface WindowAutoSizeOptions {
   padding?: number;
   enabled?: boolean;
   changeThreshold?: number;
+  dragSettleDelayMs?: number;
 }
 
 const clampDimension = (value: number, min: number, max?: number) => {

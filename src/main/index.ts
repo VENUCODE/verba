@@ -16,6 +16,7 @@ const store = new Store<{ config: AppConfig; isFirstLaunch: boolean }>({
 });
 
 let mainWindow: BrowserWindow | null = null;
+let panelWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let lastRequestedWindowSize = { width: 240, height: 40 };
 let isDragGuardActive = false;
@@ -118,6 +119,65 @@ function createWindow(): BrowserWindow {
   });
 
   return mainWindow;
+}
+
+function openPanelWindow(initialTab: 'settings' | 'history' = 'settings') {
+  if (panelWindow) {
+    panelWindow.show();
+    panelWindow.focus();
+    panelWindow.webContents.send(IPC_CHANNELS.PANEL_SET_TAB, initialTab);
+    return panelWindow;
+  }
+
+  panelWindow = new BrowserWindow({
+    width: 460,
+    height: 560,
+    useContentSize: true,
+    frame: false,
+    transparent: false,
+    backgroundColor: '#040713',
+    resizable: true,
+    skipTaskbar: false,
+    alwaysOnTop: false,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    show: false,
+  });
+
+  const loadPanel = async () => {
+    if (!panelWindow) return;
+    if (isDev) {
+      await panelWindow.loadURL(`http://localhost:5173/?view=panel&tab=${initialTab}`);
+    } else {
+      await panelWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
+        query: { view: 'panel', tab: initialTab },
+      });
+    }
+  };
+
+  loadPanel();
+
+  panelWindow.webContents.on('did-finish-load', () => {
+    panelWindow?.webContents.send(IPC_CHANNELS.PANEL_SET_TAB, initialTab);
+  });
+
+  panelWindow.once('ready-to-show', () => {
+    panelWindow?.show();
+    panelWindow?.focus();
+  });
+
+  panelWindow.on('closed', () => {
+    panelWindow = null;
+    if (!isQuitting) {
+      mainWindow?.show();
+      mainWindow?.focus();
+    }
+  });
+
+  return panelWindow;
 }
 
 function setupIPC(): void {
@@ -271,6 +331,22 @@ function setupIPC(): void {
 
   ipcMain.handle(IPC_CHANNELS.HIDE_MAIN_WINDOW, () => {
     mainWindow?.hide();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.OPEN_PANEL_WINDOW, (_, { tab }: { tab: 'settings' | 'history' }) => {
+    mainWindow?.hide();
+    openPanelWindow(tab);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOSE_PANEL_WINDOW, () => {
+    if (panelWindow) {
+      panelWindow.close();
+      panelWindow = null;
+    }
+    if (!isQuitting) {
+      mainWindow?.show();
+      mainWindow?.focus();
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => {

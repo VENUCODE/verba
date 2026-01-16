@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { AppConfig, AppStatus, TranscriptionHistory } from '../../shared/types';
 
-// Default configuration
 const DEFAULT_CONFIG: AppConfig = {
   apiKey: '',
   model: 'gpt-4o-mini-transcribe',
@@ -13,6 +12,33 @@ const DEFAULT_CONFIG: AppConfig = {
   responseFormat: 'text',
   language: undefined,
   temperature: 0,
+};
+
+const HISTORY_STORAGE_KEY = 'voice-transcriber-history-v1';
+
+const readHistoryFromStorage = (): TranscriptionHistory[] => {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+  try {
+    const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed;
+  } catch (error) {
+    console.warn('Failed to read history from storage', error);
+    return [];
+  }
+};
+
+const persistHistory = (history: TranscriptionHistory[]) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+  } catch (error) {
+    console.warn('Failed to persist history', error);
+  }
 };
 
 interface ConfigStore {
@@ -33,6 +59,7 @@ interface ConfigStore {
   setError: (error: string | null) => void;
   addToHistory: (item: Omit<TranscriptionHistory, 'id'>) => void;
   clearHistory: () => void;
+  hydrateHistory: () => void;
   exportHistory: (format: 'txt' | 'json' | 'srt') => void;
   loadConfig: () => Promise<void>;
   saveConfig: (config: Partial<AppConfig>) => Promise<void>;
@@ -45,7 +72,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
   recordingDuration: 0,
   audioLevel: 0,
   error: null,
-  history: [],
+  history: readHistoryFromStorage(),
 
   setConfig: (config) =>
     set((state) => ({
@@ -64,16 +91,28 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
 
   addToHistory: (item) =>
     set((state) => ({
-      history: [
-        {
-          ...item,
-          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        },
-        ...state.history,
-      ].slice(0, 50), // Keep last 50 items
+      history: (() => {
+        const next = [
+          {
+            ...item,
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          },
+          ...state.history,
+        ].slice(0, 50);
+        persistHistory(next);
+        return next;
+      })(),
     })),
 
-  clearHistory: () => set({ history: [] }),
+  clearHistory: () => {
+    persistHistory([]);
+    set({ history: [] });
+  },
+
+  hydrateHistory: () => {
+    const stored = readHistoryFromStorage();
+    set({ history: stored });
+  },
 
   exportHistory: (format: 'txt' | 'json' | 'srt') => {
     const state = get();

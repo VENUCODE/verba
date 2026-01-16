@@ -1,18 +1,20 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useConfigStore } from './store/configStore';
 import Setup from './pages/Setup';
 import CompactBar from './components/CompactBar';
-import ExpandablePanel from './components/ExpandablePanel';
 import { useWindowAutoSize } from './hooks/useWindowAutoSize';
+import PanelWindow from './pages/PanelWindow';
 
 type Page = 'home' | 'settings' | 'history';
 
 function App() {
   // Always call hooks in the same order
   const { isFirstLaunch, loadConfig, config } = useConfigStore();
+  const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const viewMode = searchParams.get('view') === 'panel' ? 'panel' : 'compact';
+  const initialPanelTab = (searchParams.get('tab') as 'settings' | 'history') || 'settings';
   
   const [isLoading, setIsLoading] = useState(true);
-  const [expandedPanel, setExpandedPanel] = useState<'settings' | 'history' | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [lastInteraction, setLastInteraction] = useState(Date.now());
   const contentRef = useRef<HTMLDivElement>(null);
@@ -24,7 +26,7 @@ function App() {
     maxHeight: 160,
     debounceMs: 100,
     changeThreshold: 6,
-    enabled: !isCollapsed && !(isFirstLaunch || !config.apiKey),
+    enabled: viewMode === 'compact' && !isCollapsed && !(isFirstLaunch || !config.apiKey),
   });
 
   const requestResize = useCallback(() => {
@@ -32,6 +34,15 @@ function App() {
       forceResize();
     });
   }, [forceResize]);
+
+  const resizeToContent = useCallback(() => {
+    if (!contentRef.current) return;
+    const width = Math.round(contentRef.current.offsetWidth);
+    const height = Math.round(contentRef.current.offsetHeight);
+    if (width && height) {
+      window.electronAPI.resizeWindow(width, height);
+    }
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -44,7 +55,7 @@ function App() {
 
   // Auto-collapse after 1 minute of inactivity
   useEffect(() => {
-    if (isFirstLaunch || !config.apiKey || expandedPanel) return;
+    if (viewMode !== 'compact' || isFirstLaunch || !config.apiKey) return;
 
     const checkCollapse = () => {
       const timeSinceInteraction = Date.now() - lastInteraction;
@@ -57,15 +68,18 @@ function App() {
 
     const interval = setInterval(checkCollapse, 1000);
     return () => clearInterval(interval);
-  }, [lastInteraction, isCollapsed, isFirstLaunch, config.apiKey, expandedPanel]);
+  }, [config.apiKey, isCollapsed, isFirstLaunch, lastInteraction, viewMode]);
 
   // Track interactions
   useEffect(() => {
+    if (viewMode !== 'compact') return;
     const handleInteraction = () => {
       setLastInteraction(Date.now());
       if (isCollapsed) {
         setIsCollapsed(false);
-        requestResize();
+        requestAnimationFrame(() => {
+          resizeToContent();
+        });
       }
     };
 
@@ -75,21 +89,22 @@ function App() {
       window.removeEventListener('mousemove', handleInteraction);
       window.removeEventListener('click', handleInteraction);
     };
-  }, [isCollapsed, requestResize]);
+  }, [isCollapsed, resizeToContent, viewMode]);
 
   useEffect(() => {
+    if (viewMode !== 'compact') return;
     if (!isCollapsed && config.apiKey && !isFirstLaunch) {
       requestResize();
     }
-  }, [expandedPanel, isCollapsed, config.apiKey, isFirstLaunch, requestResize]);
+  }, [config.apiKey, isCollapsed, isFirstLaunch, requestResize, viewMode]);
 
   // Resize window for setup screen
   useEffect(() => {
+    if (viewMode !== 'compact') return;
     if (isFirstLaunch || !config.apiKey) {
       window.electronAPI.resizeWindow(400, 500);
     }
-    // Note: CompactBar now handles its own dynamic sizing
-  }, [isFirstLaunch, config.apiKey]);
+  }, [config.apiKey, isFirstLaunch, viewMode]);
 
   // Listen for hotkey trigger
   useEffect(() => {
@@ -106,23 +121,17 @@ function App() {
 
   // Handle direct collapse (from minimize button)
   const handleCollapse = useCallback(() => {
-    setExpandedPanel(null);
     setIsCollapsed(true);
     setLastInteraction(Date.now());
     window.electronAPI.resizeWindow(120, 10);
   }, []);
 
-  const handlePanelToggle = useCallback((panel: 'settings' | 'history') => {
+  const handleOpenPanel = useCallback((panel: 'settings' | 'history') => {
     setLastInteraction(Date.now());
-    if (expandedPanel === panel) {
-      setExpandedPanel(null);
-      requestResize();
-    } else {
-      setIsCollapsed(false);
-      setExpandedPanel(panel);
-      requestResize();
-    }
-  }, [expandedPanel, requestResize]);
+    setIsCollapsed(false);
+    resizeToContent();
+    window.electronAPI.openPanelWindow(panel);
+  }, [resizeToContent]);
 
   const handleDragStart = useCallback(() => {
     window.electronAPI.setDragState(true);
@@ -134,12 +143,19 @@ function App() {
     window.electronAPI.setDragState(false);
   }, [notifyDragEnd]);
 
+  const renderLoader = () => (
+    <div className="flex items-center justify-center h-full bg-transparent">
+      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+    </div>
+  );
+
+  if (viewMode === 'panel') {
+    if (isLoading) return renderLoader();
+    return <PanelWindow initialTab={initialPanelTab} />;
+  }
+
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full bg-transparent">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-      </div>
-    );
+    return renderLoader();
   }
 
   // Show setup screen if first launch or no API key
@@ -155,8 +171,9 @@ function App() {
       >
         <CompactBar
           onNavigate={(page) => {
-            if (page === 'settings') handlePanelToggle('settings');
-            else if (page === 'history') handlePanelToggle('history');
+            if (page === 'settings' || page === 'history') {
+              handleOpenPanel(page);
+            }
           }}
           onExpand={handleCollapse}
           isCollapsed={isCollapsed}
@@ -164,35 +181,6 @@ function App() {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         />
-        {expandedPanel && (
-          <>
-            {/* Overlay to allow clicking outside */}
-            <div 
-              className="absolute inset-0 pointer-events-auto -z-10"
-              onClick={() => {
-                setExpandedPanel(null);
-                setLastInteraction(Date.now());
-                if (isCollapsed) {
-                  window.electronAPI.resizeWindow(120, 10);
-                } else {
-                  requestResize();
-                }
-              }}
-            />
-            <ExpandablePanel
-              type={expandedPanel}
-              onClose={() => {
-                setExpandedPanel(null);
-                setLastInteraction(Date.now());
-                if (isCollapsed) {
-                  window.electronAPI.resizeWindow(120, 10);
-                } else {
-                  requestResize();
-                }
-              }}
-            />
-          </>
-        )}
       </div>
     </div>
   );
