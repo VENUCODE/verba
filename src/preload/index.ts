@@ -22,6 +22,9 @@ const IPC_CHANNELS = {
   PANEL_SET_TAB: 'window:panelSetTab',
   HIDE_MAIN_WINDOW: 'window:hideMain',
   SET_DRAG_STATE: 'window:setDragState',
+  MOVE_WINDOW: 'window:move',
+  OPEN_SETUP_WINDOW: 'window:openSetup',
+  CLOSE_SETUP_WINDOW: 'window:closeSetup',
 } as const;
 
 // Type for AppConfig (inline to avoid import)
@@ -36,6 +39,10 @@ interface AppConfig {
   responseFormat?: string;
   language?: string;
   temperature?: number;
+  silenceDetectionEnabled?: boolean;
+  silenceDurationMs?: number;
+  silenceThreshold?: number;
+  autoPasteEnabled?: boolean;
 }
 
 // Expose protected methods to the renderer process
@@ -77,6 +84,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_CHANNELS.HIDE_MAIN_WINDOW),
   setDragState: (active: boolean): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.SET_DRAG_STATE, { active }),
+  moveWindow: (deltaX: number, deltaY: number): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.MOVE_WINDOW, { deltaX, deltaY }),
+  closeSetupWindow: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CLOSE_SETUP_WINDOW),
 
   // Event listeners
   onHotkeyTriggered: (callback: () => void) => {
@@ -122,6 +133,8 @@ export interface ElectronAPI {
   closePanelWindow: () => Promise<void>;
   hideMainWindow: () => Promise<void>;
   setDragState: (active: boolean) => Promise<void>;
+  moveWindow: (deltaX: number, deltaY: number) => Promise<void>;
+  closeSetupWindow: () => Promise<void>;
   onHotkeyTriggered: (callback: () => void) => () => void;
   onTranscriptionChunk: (callback: (chunk: string) => void) => () => void;
   onPanelTabChange: (callback: (tab: 'settings' | 'history') => void) => () => void;

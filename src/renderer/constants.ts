@@ -66,3 +66,37 @@ export const DURATION_OPTIONS = [
   { label: '3 minutes', value: 180 },
   { label: '5 minutes', value: 300 },
 ];
+
+// Silence detection configuration
+export const SILENCE_DETECTION = {
+  defaultEnabled: true,              // Enabled by default
+  defaultDurationMs: 3000,           // 3 seconds of silence to trigger stop
+  checkIntervalMs: 100,              // Check every 100ms
+  minRecordingDurationMs: 2000,      // Don't auto-stop before 2 seconds (allows speech detection)
+  fftSize: 256,                      // FFT size for frequency analysis
+  smoothingTimeConstant: 0.3,        // Lower = more responsive to silence
+
+  // Adaptive threshold settings
+  calibrationDurationMs: 1500,       // Calibrate for first 1.5 seconds
+  noiseFloorMultiplier: 1.5,         // Noise floor = baseline * 1.5
+  speechThresholdMultiplier: 4.0,    // Speech detected when > noise floor * 4 (increased for reliability)
+  silenceThresholdPercent: 0.20,     // Silence = below 20% of peak speech level
+
+  // Moving average settings
+  movingAverageSamples: 10,          // Use last 10 samples for smoothing (more stable)
+
+  // Peak tracking
+  peakDecayRate: 0.998,              // Decay factor per check (slower decay to maintain speech level)
+  minPeakLevel: 0.05,                // Minimum peak level to consider valid speech (increased)
+
+  // NEW: Speech confirmation settings
+  speechConfirmationSamples: 3,      // Require 3 consecutive samples above speech threshold
+  silenceConfirmationSamples: 5,     // Require 5 consecutive samples below silence threshold
+}
+
+export const SILENCE_DURATION_OPTIONS = [
+  { label: '2 seconds', value: 2000 },
+  { label: '3 seconds', value: 3000 },
+  { label: '4 seconds', value: 4000 },
+  { label: '5 seconds', value: 5000 },
+];

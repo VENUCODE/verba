@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useConfigStore } from '../store/configStore';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import VerticalBarsVisualizer from './VerticalBarsVisualizer';
 import { soundManager } from '../utils/sounds';
-import { GripVertical, History, Settings2 } from 'lucide-react';
+import { GripVertical, Menu } from 'lucide-react';
 
 interface CompactBarProps {
   onNavigate: (page: 'home' | 'settings' | 'history') => void;
@@ -28,6 +28,14 @@ function CompactBar({
 }: CompactBarProps) {
   const { config, status, setStatus, setError, addToHistory, error } = useConfigStore();
   const [showIconsDuringRecording, setShowIconsDuringRecording] = useState(false);
+  const [showIconsAfterTranscribe, setShowIconsAfterTranscribe] = useState(true);
+  const [previousStatus, setPreviousStatus] = useState<string>('idle');
+
+  // Refs for timeout management
+  const showIconsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const transcriptionEndTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Ref for handling silence detection callback
+  const handleSilenceStopRef = useRef<(() => void) | null>(null);
 
   const {
     isRecording,
@@ -37,7 +45,15 @@ function CompactBar({
     stopRecording,
   } = useAudioRecorder({
     maxDuration: config.maxDuration,
-    deviceId: config.selectedInputDevice
+    deviceId: config.selectedInputDevice,
+    // Silence detection options
+    silenceDetectionEnabled: config.silenceDetectionEnabled,
+    silenceDurationMs: config.silenceDurationMs,
+    silenceThreshold: config.silenceThreshold,
+    onSilenceDetected: useCallback(() => {
+      // Use the ref to call the current version of stop handler
+      handleSilenceStopRef.current?.();
+    }, []),
   });
 
   const formatDuration = (seconds: number): string => {
@@ -69,11 +85,9 @@ function CompactBar({
       }
 
       if (text) {
-        // Auto-paste the transcribed text
-        await window.electronAPI.pasteText(text);
-        soundManager.playSuccess();
+        console.log('[CompactBar] Transcription completed, text length:', text.length);
 
-        // Add to history
+        // Add to history first
         addToHistory({
           text,
           duration,
@@ -81,12 +95,33 @@ function CompactBar({
           model: config.model,
         });
 
+        // Auto-paste the transcribed text (if enabled)
+        if (config.autoPasteEnabled !== false) {
+          try {
+            console.log('[CompactBar] Attempting to paste text');
+            await window.electronAPI.pasteText(text);
+            console.log('[CompactBar] Paste completed successfully');
+            soundManager.playSuccess();
+          } catch (pasteErr: any) {
+            console.error('[CompactBar] Paste failed:', pasteErr);
+            soundManager.playError();
+            // Show error but don't fail the whole operation
+            setError(pasteErr.message || 'Failed to paste text automatically. Text copied to clipboard.');
+            setTimeout(() => setError(null), 5000);
+          }
+        } else {
+          console.log('[CompactBar] Auto-paste disabled, skipping paste operation');
+          soundManager.playSuccess();
+        }
+
         setStatus('idle');
       } else {
         soundManager.playError();
         setError('No transcription returned');
+        setStatus('idle');
       }
     } catch (err: any) {
+      console.error('[CompactBar] Transcription failed:', err);
       soundManager.playError();
       setError(err.message || 'Transcription failed');
       setStatus('idle');
@@ -142,17 +177,56 @@ function CompactBar({
     }
   }, [isRecording, stopRecording, handleTranscribe]);
 
+  // Keep the ref updated with the current stop handler for silence detection
+  useEffect(() => {
+    handleSilenceStopRef.current = handleStopRecording;
+  }, [handleStopRecording]);
+
   // Listen for global hotkey
   useEffect(() => {
-    const handleHotkey = () => {
-      toggleRecording();
+    const handleHotkey = async () => {
+      if (isRecording) {
+        // This is the stop functionality
+        soundManager.playStop();
+        const audioBlob = await stopRecording();
+        if (audioBlob) {
+          await handleTranscribe(audioBlob);
+        }
+      } else {
+        // Check if API key is configured before starting
+        if (!config.apiKey) {
+          soundManager.playNotification();
+          setError('Please configure your OpenAI API key in settings');
+          setTimeout(() => setError(null), 3000);
+          return;
+        }
+
+        // Check if cursor is in active input before starting
+        try {
+          const hasActiveInput = await window.electronAPI.checkActiveInput();
+          if (!hasActiveInput) {
+            soundManager.playNotification();
+            setError('Please click in a text field first');
+            setTimeout(() => setError(null), 3000);
+            return;
+          }
+        } catch (err) {
+          // If check fails, proceed anyway
+          console.warn('Could not check active input:', err);
+        }
+
+        soundManager.playStart();
+        setError(null);
+        setStatus('recording');
+        await startRecording();
+      }
     };
 
     window.addEventListener('hotkey-triggered', handleHotkey);
     return () => {
       window.removeEventListener('hotkey-triggered', handleHotkey);
     };
-  }, [toggleRecording]);
+  }, [isRecording, config.apiKey, startRecording, stopRecording, handleTranscribe, setStatus, setError]);
 
   // Update status when recording state changes
   useEffect(() => {
@@ -164,80 +238,143 @@ function CompactBar({
     }
   }, [isRecording, setStatus]);
 
+  // Handle transcribing state transitions - simplified state machine
+  useEffect(() => {
+    if (status === 'transcribing') {
+      // Clear any pending timeout when starting transcription
+      if (transcriptionEndTimeoutRef.current) {
+        clearTimeout(transcriptionEndTimeoutRef.current);
+        transcriptionEndTimeoutRef.current = null;
+      }
+      setShowIconsAfterTranscribe(false);
+    } else if (status === 'idle' && previousStatus === 'transcribing') {
+      // Transcribing just finished - wait for animation then show icons
+      transcriptionEndTimeoutRef.current = setTimeout(() => {
+        setShowIconsAfterTranscribe(true);
+        transcriptionEndTimeoutRef.current = null;
+      }, 300);
+    } else if (status === 'idle' && previousStatus !== 'transcribing') {
+      // Normal idle state - show icons immediately
+      setShowIconsAfterTranscribe(true);
+    }
+
+    // Track status changes
+    setPreviousStatus(status);
+
+    // Cleanup timeout on unmount or status change
+    return () => {
+      if (transcriptionEndTimeoutRef.current) {
+        clearTimeout(transcriptionEndTimeoutRef.current);
+        transcriptionEndTimeoutRef.current = null;
+      }
+    };
+  }, [status, previousStatus]);
+
+  // Cleanup showIconsTimeout on component unmount
+  useEffect(() => {
+    return () => {
+      if (showIconsTimeoutRef.current) {
+        clearTimeout(showIconsTimeoutRef.current);
+        showIconsTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   // Handle panel expansion
   const handlePanelToggle = useCallback((panel: 'settings' | 'history') => {
     onNavigate(panel);
   }, [onNavigate]);
 
-  const getStatusColor = () => {
-    switch (status) {
-      case 'recording':
-        return 'bg-red-500';
-      case 'transcribing':
-        return 'bg-yellow-500';
-      case 'error':
-        return 'bg-red-600';
-      default:
-        return 'bg-blue-500';
-    }
-  };
-
   const handleHideWindow = useCallback(() => {
     window.electronAPI.hideMainWindow();
   }, []);
+
+  // Get background style based on state
+  const getBackgroundStyle = () => {
+    switch (status) {
+      case 'idle':
+        return {
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.88))',
+          borderColor: 'rgba(100, 116, 139, 0.2)',
+          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        };
+      case 'recording':
+        return {
+          background: 'linear-gradient(90deg, rgba(35, 20, 25, 0.92), rgba(80, 25, 30, 0.88), rgba(120, 40, 30, 0.85), rgba(80, 25, 30, 0.88), rgba(35, 20, 25, 0.92))',
+          backgroundSize: '200% 100%',
+          animation: 'gradient-flow 4s ease-in-out infinite',
+          borderColor: 'rgba(239, 68, 68, 0.35)',
+          transition: 'border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        };
+      case 'transcribing':
+        return {
+          background: 'linear-gradient(270deg, rgba(15, 23, 42, 0.92), rgba(30, 58, 138, 0.85), rgba(67, 56, 202, 0.85), rgba(15, 23, 42, 0.92))',
+          backgroundSize: '400% 100%',
+          animation: 'gradient-shimmer 3s ease infinite',
+          borderColor: 'rgba(99, 102, 241, 0.35)',
+          transition: 'border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        };
+      default:
+        return {
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.88))',
+          borderColor: 'rgba(100, 116, 139, 0.2)',
+          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        };
+    }
+  };
+
+  const backgroundStyle = getBackgroundStyle();
 
   if (isCollapsed) {
     const isMorphing = expansionPhase === 'morphing';
 
     return (
       <div
-        className={`drag-region relative flex h-full w-full items-center justify-center rounded-2xl shadow-xl cursor-pointer overflow-hidden
-          ${isMorphing ? 'animate-chip-morph' : 'transition-all duration-300'}
-          ${isHovering && !isMorphing ? 'hover-glow-active' : ''}`}
+        className={`relative flex h-full w-full items-center justify-center rounded-2xl cursor-pointer overflow-hidden
+          ${isMorphing ? 'animate-chip-morph' : 'transition-all duration-300'}`}
         style={{
           background: isMorphing
-            ? 'rgba(0, 0, 0, 0.9)'  // Transition to compact bar color
-            : 'rgba(16, 20, 35, 0.75)',
-          border: '1px solid rgba(255, 255, 255, 0)',
-          backdropFilter: 'blur(14px)',
+            ? 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.9))'
+            : isHovering && !isMorphing
+              ? 'linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(51, 65, 85, 0.88))'
+              : 'linear-gradient(135deg, rgba(15, 23, 42, 0.88), rgba(30, 41, 59, 0.85))',
+          border: isHovering && !isMorphing
+            ? '1px solid rgba(148, 163, 184, 0.25)'
+            : '1px solid rgba(100, 116, 139, 0.15)',
+          backdropFilter: 'blur(24px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+          boxShadow: isHovering && !isMorphing
+            ? '0 2px 8px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+            : '0 1px 6px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
           opacity: isMorphing ? 0 : 1,
         }}
-        onClick={() => {
-          onInteraction?.();
-        }}
-        onMouseDown={() => {
-          onDragStart?.();
-          const handleMouseUp = () => {
-            onDragEnd?.();
-            window.removeEventListener('mouseup', handleMouseUp);
-          };
-          window.addEventListener('mouseup', handleMouseUp);
-        }}
-        title="Click to expand"
+        title="Click to expand or drag to move"
       >
-        {/* Animated glow overlay - visible during hover */}
+        {/* Premium gradient overlay with animated shimmer */}
+        <div
+          className="absolute inset-0 rounded-2xl pointer-events-none"
+          style={{
+            background: 'linear-gradient(135deg, rgba(96, 165, 250, 0.15), rgba(168, 85, 247, 0.12), rgba(236, 72, 153, 0.1))',
+            opacity: isHovering && !isMorphing ? 0.6 : 0.4,
+            transition: 'opacity 300ms ease-in-out',
+          }}
+        />
+
+        {/* Subtle inner glow effect on hover */}
         {isHovering && !isMorphing && (
           <div
-            className="absolute inset-0 rounded-2xl animate-hover-glow"
+            className="absolute inset-0 rounded-2xl animate-hover-glow pointer-events-none"
             style={{
-              background: 'linear-gradient(120deg, rgba(59,130,246,0.4), rgba(147,51,234,0.4), rgba(59,130,246,0.4))',
-              backgroundSize: '200% 200%',
+              boxShadow: 'inset 0 0 24px rgba(96, 165, 250, 0.12), inset 0 0 48px rgba(168, 85, 247, 0.08)',
             }}
           />
         )}
-        {/* Existing gradient overlay */}
-        <div
-          className="absolute inset-1 rounded-2xl opacity-40"
-          style={{
-            background: 'linear-gradient(120deg, rgba(59,130,246,0.35), rgba(147,51,234,0.35))',
-            animation: 'pulse 2s ease-in-out infinite alternate',
-          }}
-        ></div>
+
         {/* Content fades out during morph */}
         <div
           className={`relative z-10 flex w-full items-center justify-center px-4 transition-opacity duration-300 ${isMorphing ? 'opacity-0' : ''}`}
         >
-          <div className="h-1.5 w-24 rounded-full bg-white/40 shadow-sm"></div>
+          <div className="h-1.5 w-24 rounded-full bg-gradient-to-r from-blue-400/60 via-purple-400/60 to-pink-400/60 shadow-lg"></div>
         </div>
       </div>
     );
@@ -245,25 +382,71 @@ function CompactBar({
 
   return (
     <div
-      className={`flex w-full flex-col rounded-2xl border border-blue-400/12 bg-black/90 shadow-2xl overflow-hidden
+      className={`flex w-full flex-col rounded-2xl overflow-hidden relative
         ${expansionPhase === 'expanding' ? 'animate-bar-appear' : ''}`}
-      style={{ minWidth: '216px', minHeight: '56px' }}
+      style={{
+        minWidth: '280px',
+        minHeight: '60px',
+        ...backgroundStyle,
+        border: `1px solid ${backgroundStyle.borderColor}`,
+        backdropFilter: 'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3), 0 1px 4px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+      }}
     >
+      {/* Top highlight edge for premium glass effect */}
+      <div
+        className="absolute top-0 left-0 right-0 h-px pointer-events-none z-20"
+        style={{
+          background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15) 20%, rgba(255, 255, 255, 0.15) 80%, transparent)',
+        }}
+      />
+
+      {/* Subtle gradient overlay for idle state */}
+      {status === 'idle' && (
+        <div
+          className="absolute inset-0 rounded-2xl pointer-events-none"
+          style={{
+            background: 'linear-gradient(135deg, rgba(96, 165, 250, 0.08), rgba(168, 85, 247, 0.06), rgba(236, 72, 153, 0.04))',
+            opacity: 0.5,
+          }}
+        />
+      )}
+
+      {/* Subtle recording pulse overlay */}
+      {status === 'recording' && (
+        <div
+          className="absolute inset-0 rounded-2xl pointer-events-none"
+          style={{
+            background: 'radial-gradient(circle at center, rgba(239, 68, 68, 0.15) 0%, transparent 70%)',
+            animation: 'pulse-glow 2s ease-in-out infinite',
+          }}
+        />
+      )}
+
       {/* Main Bar */}
       <div
-        className="flex w-full items-center gap-2 px-4 py-2 min-h-[44px] overflow-visible"
+        className="flex w-full items-center gap-3 px-4 py-2.5 min-h-[52px] overflow-visible relative z-10"
         onClick={(e) => {
           // Show icons when clicking on bar during recording
           if (isRecording && !showIconsDuringRecording && e.target === e.currentTarget) {
+            // Clear previous timeout if it exists
+            if (showIconsTimeoutRef.current) {
+              clearTimeout(showIconsTimeoutRef.current);
+            }
+
             setShowIconsDuringRecording(true);
-            setTimeout(() => setShowIconsDuringRecording(false), 5000); // Hide after 5 seconds
+            showIconsTimeoutRef.current = setTimeout(() => {
+              setShowIconsDuringRecording(false);
+              showIconsTimeoutRef.current = null;
+            }, 5000); // Hide after 5 seconds
           }
         }}
       >
 
-        {/* Drag Handle - 6 dots in 2x3 grid */}
-        <div 
-          className="flex items-center justify-center w-6 h-6 mr-2 drag-region hover:bg-white/10 rounded transition-colors" 
+        {/* 1. Drag Handle - Far Left */}
+        <div
+          className="flex items-center justify-center w-7 h-7 flex-shrink-0 drag-region rounded-lg transition-all duration-200 hover:bg-white/15 active:bg-white/10"
           title="Drag to move"
           onMouseDown={() => {
             onDragStart?.();
@@ -274,152 +457,163 @@ function CompactBar({
             window.addEventListener('mouseup', handleMouseUp);
           }}
         >
-          <GripVertical className="text-white/70 hover:text-white/90" />
+          <GripVertical className="w-5 h-5 text-white/60 hover:text-white/90 transition-colors duration-200 flex-shrink-0" />
         </div>
 
-        {/* Record Button - Replace with Visualizer when idle */}
-        {status === 'idle' && !isRecording ? (
-          <div 
-            onClick={toggleRecording}
-            className="h-8 cursor-pointer flex items-center justify-center no-drag"
-            title="Click to start recording"
-          >
-            <VerticalBarsVisualizer audioStream={null} isRecording={false} barCount={18} height={24} />
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 no-drag">
+        {/* 2. Waveform Visualizer - Center/Middle section (flexible space) */}
+        <div className="flex items-center gap-2 flex-1 no-drag" style={{ minWidth: '140px' }}>
+          {/* Record/Stop Button */}
+          {status === 'idle' && !isRecording ? (
+            <button
+              onClick={toggleRecording}
+              className="w-8 h-8 rounded-full flex items-center justify-center relative flex-shrink-0 cursor-pointer focus:outline-none transition-all duration-200 hover:scale-110 active:scale-95 group"
+              title="Start recording"
+              style={{
+                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
+              }}
+            >
+              {/* Glow effect on hover */}
+              <div
+                className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                style={{
+                  boxShadow: '0 0 20px rgba(59, 130, 246, 0.6), 0 0 40px rgba(59, 130, 246, 0.3)',
+                }}
+              />
+              <div className="w-3 h-3 rounded-full bg-white shadow-sm relative z-10"></div>
+            </button>
+          ) : (
             <button
               onClick={handleStopRecording}
               disabled={!isRecording}
               className={`
-                w-7 h-7 rounded-full flex items-center justify-center
-                transition-all duration-200 flex-shrink-0 cursor-pointer no-drag
-                ${getStatusColor()}
+                w-8 h-8 rounded-full flex items-center justify-center relative
+                transition-all duration-200 flex-shrink-0 cursor-pointer group
                 ${!isRecording ? 'cursor-not-allowed opacity-50' : 'hover:scale-110 active:scale-95'}
-                focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/50
+                focus:outline-none
               `}
+              style={{
+                background: status === 'recording'
+                  ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                  : status === 'transcribing'
+                  ? 'linear-gradient(135deg, #eab308, #ca8a04)'
+                  : 'linear-gradient(135deg, #dc2626, #b91c1c)',
+                boxShadow: status === 'recording'
+                  ? '0 4px 12px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
+                  : status === 'transcribing'
+                  ? '0 4px 12px rgba(234, 179, 8, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
+                  : '0 4px 12px rgba(220, 38, 38, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
+              }}
               title="Stop recording"
             >
+              {/* Glow effect on hover for active recording */}
+              {isRecording && (
+                <div
+                  className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                  style={{
+                    boxShadow: status === 'recording'
+                      ? '0 0 20px rgba(239, 68, 68, 0.6), 0 0 40px rgba(239, 68, 68, 0.3)'
+                      : '0 0 20px rgba(234, 179, 8, 0.6), 0 0 40px rgba(234, 179, 8, 0.3)',
+                  }}
+                />
+              )}
               {status === 'transcribing' ? (
-                <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin relative z-10"></div>
               ) : (
-                <div className="w-2.5 h-2.5 bg-white rounded-sm"></div>
+                <div className="w-2.5 h-2.5 bg-white rounded-sm shadow-sm relative z-10"></div>
               )}
             </button>
-          </div>
-        )}
-
-        {/* Status/Timer */}
-        <div className="flex items-center gap-1.5 no-drag">
-          {isRecording && (
-            <>
-              <div className="h-full">
-                <VerticalBarsVisualizer audioStream={audioStream} isRecording={isRecording} barCount={18} height={46} />
-              </div>
-            </>
           )}
+
+          {/* Waveform Visualizer */}
+          <div className="flex items-center justify-center flex-1" style={{ height: '36px', minWidth: '100px' }}>
+            <VerticalBarsVisualizer
+              audioStream={isRecording ? audioStream : null}
+              isRecording={isRecording}
+              barCount={18}
+              height={36}
+            />
+          </div>
+
+          {/* Status Text */}
           {status === 'transcribing' && (
-            <span className="text-[10px] text-white/80">Transcribing...</span>
+            <span
+              className="text-[10px] text-white/90 flex-shrink-0 font-medium tracking-wide"
+              style={{
+                animation: 'fadeIn 0.3s ease-out',
+              }}
+            >
+              Transcribing...
+            </span>
           )}
         </div>
 
-        {/* Question mark icon with styled tooltip - Hide during recording unless explicitly shown */}
-        {
-        // ((!isRecording) || showIconsDuringRecording) && (
-        //   <div className="relative group/help no-drag">
-        //     <button
-        //       onClick={(e) => {
-        //         e.stopPropagation();
-        //       }}
-        //       className={`p-1 hover:bg-white/20 rounded transition-all duration-200 no-drag cursor-pointer relative z-10 ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}`}
-        //     >
-        //       <svg className="w-3.5 h-3.5 text-white/60 hover:text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        //         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        //       </svg>
-        //     </button>
-        //     {/* Styled tooltip - positioned below the icon */}
-        //     <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-3 py-2 bg-gray-900 text-white text-[10px] rounded-lg shadow-2xl border border-white/30 whitespace-nowrap opacity-0 group-hover/help:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999] min-w-[120px]">
-        //       <div className="text-white/70 font-medium mb-1 text-[9px] uppercase tracking-wider">Hotkey</div>
-        //       <div className="text-white font-mono font-bold text-xs">
-        //         {config.hotkey.replace('CommandOrControl', 'Ctrl').replace('+', ' + ')}
-        //       </div>
-        //       {/* Arrow pointing up */}
-        //       <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 border-l border-t border-white/30 transform rotate-45"></div>
-        //     </div>
-        //   </div>
-        // )
-        }
+        {/* 3. Right side icons - Panel, Minimize, Close (in that specific order) */}
+        <div className="flex items-center gap-1.5 flex-shrink-0 no-drag">
+          {/* Panel Button - opens settings/history panel */}
+          {((!isRecording && (expansionPhase === 'expanded' || expansionPhase === 'expanding') && showIconsAfterTranscribe) || showIconsDuringRecording) && (
+            <button
+              onClick={() => handlePanelToggle('settings')}
+              className={`p-1.5 rounded-lg cursor-pointer flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:bg-white/15 active:bg-white/10 hover:scale-105 active:scale-95 group
+                ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}
+                ${!isRecording && previousStatus === 'transcribing' ? 'animate-icon-float-up' : ''}`}
+              style={{
+                animationDelay: !isRecording && previousStatus === 'transcribing' ? '0ms' : undefined,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+              }}
+              title="Open Panel"
+            >
+              <Menu className="w-4 h-4 text-white/70 group-hover:text-white/95 transition-colors duration-200 flex-shrink-0" />
+            </button>
+          )}
 
-        {/* History Button - only show when fully expanded */}
-        {((!isRecording && expansionPhase === 'expanded') || showIconsDuringRecording) && (
-          <button
-            onClick={() => handlePanelToggle('history')}
-            className={`p-1 hover:bg-white/20 rounded no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : 'animate-icon-float-up'}`}
-            style={{
-              animationDelay: '0ms'  // First icon, no additional delay
-            }}
-            title="History"
-          >
-            <History className="text-white/90 h-4 w-4" />
-          </button>
-        )}
+          {/* Minimize Button */}
+          {((!isRecording && (expansionPhase === 'expanded' || expansionPhase === 'expanding') && showIconsAfterTranscribe) || showIconsDuringRecording) && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onInteraction?.();
+                if (onExpand) {
+                  onExpand();
+                }
+              }}
+              className={`p-1.5 rounded-lg cursor-pointer flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:bg-white/15 active:bg-white/10 hover:scale-105 active:scale-95 group
+                ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}
+                ${!isRecording && previousStatus === 'transcribing' ? 'animate-icon-float-up' : ''}`}
+              style={{
+                animationDelay: !isRecording && previousStatus === 'transcribing' ? '200ms' : undefined,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+              }}
+              title="Minimize to chip"
+            >
+              <svg className="w-3.5 h-3.5 text-white/70 group-hover:text-white/95 transition-colors duration-200 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+              </svg>
+            </button>
+          )}
 
-        {/* Settings Button */}
-        {((!isRecording && expansionPhase === 'expanded') || showIconsDuringRecording) && (
-          <button
-            onClick={() => handlePanelToggle('settings')}
-            className={`p-1 hover:bg-white/20 rounded no-drag cursor-pointer ${showIconsDuringRecording && isRecording ? 'fade-in' : 'animate-icon-float-up'}`}
-            style={{
-              animationDelay: '400ms'  // 0.4s after History
-            }}
-            title="Settings"
-          >
-            <Settings2 className="text-white/90 h-4 w-4" />
-          </button>
-        )}
-
-        {/* Minimize Button */}
-        {expansionPhase === 'expanded' && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              // Always collapse to chip, regardless of panel state
-              onInteraction?.();
-              // Signal to parent to collapse
-              if (onExpand) {
-                onExpand();
-              }
-            }}
-            className="p-1 hover:bg-white/20 rounded no-drag cursor-pointer animate-icon-float-up"
-            style={{
-              animationDelay: '800ms'  // 0.4s after Settings
-            }}
-            title="Minimize to chip"
-          >
-            <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-            </svg>
-          </button>
-        )}
-
-        {/* Close Button */}
-        {expansionPhase === 'expanded' && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleHideWindow();
-            }}
-            className="p-1 hover:bg-white/20 rounded no-drag cursor-pointer animate-icon-float-up"
-            style={{
-              animationDelay: '1200ms'  // 0.4s after Minimize
-            }}
-            title="Hide to tray"
-          >
-            <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M6 18L18 6" />
-            </svg>
-          </button>
-        )}
+          {/* Close Button */}
+          {((!isRecording && (expansionPhase === 'expanded' || expansionPhase === 'expanding') && showIconsAfterTranscribe) || showIconsDuringRecording) && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleHideWindow();
+              }}
+              className={`p-1.5 rounded-lg cursor-pointer flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:bg-red-500/20 active:bg-red-500/15 hover:scale-105 active:scale-95 group
+                ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}
+                ${!isRecording && previousStatus === 'transcribing' ? 'animate-icon-float-up' : ''}`}
+              style={{
+                animationDelay: !isRecording && previousStatus === 'transcribing' ? '400ms' : undefined,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+              }}
+              title="Hide to tray"
+            >
+              <svg className="w-3.5 h-3.5 text-white/70 group-hover:text-red-400 transition-colors duration-200 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M6 18L18 6" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
     </div>

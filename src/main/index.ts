@@ -17,6 +17,7 @@ const store = new Store<{ config: AppConfig; isFirstLaunch: boolean }>({
 
 let mainWindow: BrowserWindow | null = null;
 let panelWindow: BrowserWindow | null = null;
+let setupWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let lastRequestedWindowSize = { width: 240, height: 40 };
 let isDragGuardActive = false;
@@ -39,10 +40,11 @@ app.commandLine.appendSwitch('force-device-scale-factor', '1');
 function createWindow(): BrowserWindow {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
-  
+
+  // Main window is always for CompactBar - starts small
   mainWindow = new BrowserWindow({
-    width: 600,
-    height: 720,
+    width: 280,
+    height: 60,
     useContentSize: true,
     frame: false,
     transparent: true,
@@ -50,8 +52,8 @@ function createWindow(): BrowserWindow {
     alwaysOnTop: true,
     resizable: true,
     skipTaskbar: true,
-    x: Math.floor((screenWidth - 600) / 2),
-    y: Math.floor((screenHeight - 720) / 2),
+    x: Math.floor((screenWidth - 280) / 2),
+    y: Math.floor((screenHeight - 60) / 2),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -60,7 +62,7 @@ function createWindow(): BrowserWindow {
     icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
   });
-  lastRequestedWindowSize = { width: 600, height: 720 };
+  lastRequestedWindowSize = { width: 280, height: 60 };
 
   // Keep window within screen bounds when moved (only for compact mode)
   mainWindow.on('will-move', (event, newBounds) => {
@@ -92,21 +94,19 @@ function createWindow(): BrowserWindow {
   mainWindow.once('ready-to-show', () => {
     const config = store.get('config');
     const isFirstLaunch = store.get('isFirstLaunch');
-    
+
     if (!config.startMinimized) {
-      // Resize for setup if needed
+      // If first launch or no API key, open separate setup window
       if (isFirstLaunch || !config.apiKey) {
-        // Larger window for setup form - increased to 600x720 to show all content
-        mainWindow?.setContentSize(600, 720, false);
-        mainWindow?.center(); // Center the setup window
-        lastRequestedWindowSize = { width: 600, height: 720 };
+        openSetupWindow();
+        // Don't show main window during setup
       } else {
-        // Show a visible compact window (increased from 240x40 to 280x60 for better visibility)
+        // Show the compact bar
         mainWindow?.setContentSize(280, 60, false);
         lastRequestedWindowSize = { width: 280, height: 60 };
+        mainWindow?.show();
+        mainWindow?.focus();
       }
-      mainWindow?.show();
-      mainWindow?.focus();
     }
   });
 
@@ -122,12 +122,7 @@ function createWindow(): BrowserWindow {
       return;
     }
     const { width, height } = mainWindow.getContentBounds();
-    
-    // Don't force resize during setup (allow natural sizing)
-    if (width > 300 && height > 300) {
-      return;
-    }
-    
+
     const widthDiff = Math.abs(width - lastRequestedWindowSize.width);
     const heightDiff = Math.abs(height - lastRequestedWindowSize.height);
     if (widthDiff > 2 || heightDiff > 2) {
@@ -243,6 +238,62 @@ function openPanelWindow(initialTab: 'settings' | 'history' = 'settings') {
   return panelWindow;
 }
 
+function openSetupWindow() {
+  if (setupWindow) {
+    setupWindow.show();
+    setupWindow.focus();
+    return setupWindow;
+  }
+
+  setupWindow = new BrowserWindow({
+    width: 500,
+    height: 680,
+    minWidth: 450,
+    minHeight: 600,
+    maxWidth: 600,
+    maxHeight: 800,
+    useContentSize: true,
+    frame: false,
+    transparent: false,
+    backgroundColor: '#040713',
+    resizable: true,
+    skipTaskbar: false,
+    alwaysOnTop: false,
+    center: true,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    icon: path.join(__dirname, '../../assets/icon.png'),
+    show: false,
+  });
+
+  const loadSetup = async () => {
+    if (!setupWindow) return;
+    if (isDev) {
+      await setupWindow.loadURL('http://localhost:5173/?view=setup');
+    } else {
+      await setupWindow.loadFile(path.join(__dirname, '../../renderer/index.html'), {
+        query: { view: 'setup' },
+      });
+    }
+  };
+
+  loadSetup();
+
+  setupWindow.once('ready-to-show', () => {
+    setupWindow?.show();
+    setupWindow?.focus();
+  });
+
+  setupWindow.on('closed', () => {
+    setupWindow = null;
+  });
+
+  return setupWindow;
+}
+
 function setupIPC(): void {
   // Config handlers
   ipcMain.handle(IPC_CHANNELS.GET_CONFIG, () => {
@@ -326,52 +377,85 @@ function setupIPC(): void {
 
   // Paste text handler
   ipcMain.handle(IPC_CHANNELS.PASTE_TEXT, async (_, text: string) => {
+    console.log('[PASTE] Starting paste operation, text length:', text.length);
+
     try {
+      // First, copy text to clipboard
       clipboard.writeText(text);
-      
-      // Make window semi-transparent instead of hiding completely
+      console.log('[PASTE] Text copied to clipboard');
+
+      // Store current window state
+      const wasVisible = mainWindow?.isVisible() ?? false;
+      const wasAlwaysOnTop = mainWindow?.isAlwaysOnTop() ?? false;
+
+      // Temporarily disable always-on-top and hide window to allow focus shift
       if (mainWindow) {
-        mainWindow.setOpacity(0.3);
-        mainWindow.setIgnoreMouseEvents(true, { forward: true });
+        console.log('[PASTE] Disabling always-on-top and hiding window');
+        mainWindow.setAlwaysOnTop(false);
+        mainWindow.hide();
       }
-      
-      // Small delay to let OS shift focus
-      await new Promise(resolve => setTimeout(resolve, 150));
-      
-      // Simulate Ctrl+V / Cmd+V using nut-js
+
+      // Wait for window to fully hide and OS to shift focus
+      // Increased delay to ensure proper focus shift
+      await new Promise(resolve => setTimeout(resolve, 400));
+      console.log('[PASTE] Window hidden, focus should be shifted');
+
+      // Import and use nut-js for keyboard simulation
       const { keyboard, Key } = await import('@nut-tree-fork/nut-js');
-      
+      console.log('[PASTE] nut-js imported, simulating paste keystroke');
+
+      // Simulate Ctrl+V / Cmd+V
       if (process.platform === 'darwin') {
+        console.log('[PASTE] Using Cmd+V for macOS');
         await keyboard.pressKey(Key.LeftCmd);
+        await new Promise(resolve => setTimeout(resolve, 50));
         await keyboard.pressKey(Key.V);
+        await new Promise(resolve => setTimeout(resolve, 50));
         await keyboard.releaseKey(Key.V);
+        await new Promise(resolve => setTimeout(resolve, 50));
         await keyboard.releaseKey(Key.LeftCmd);
       } else {
+        console.log('[PASTE] Using Ctrl+V for Windows/Linux');
         await keyboard.pressKey(Key.LeftControl);
+        await new Promise(resolve => setTimeout(resolve, 50));
         await keyboard.pressKey(Key.V);
+        await new Promise(resolve => setTimeout(resolve, 50));
         await keyboard.releaseKey(Key.V);
+        await new Promise(resolve => setTimeout(resolve, 50));
         await keyboard.releaseKey(Key.LeftControl);
       }
-      
-      // Restore window visibility smoothly
-      setTimeout(() => {
-        if (mainWindow) {
-          mainWindow.setOpacity(1);
-          mainWindow.setIgnoreMouseEvents(false);
+
+      console.log('[PASTE] Paste keystroke simulated');
+
+      // Wait for paste to complete
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Restore window state
+      if (mainWindow && wasVisible) {
+        console.log('[PASTE] Restoring window state');
+        if (wasAlwaysOnTop) {
+          mainWindow.setAlwaysOnTop(true);
         }
-      }, 300);
-      
+        mainWindow.show();
+      }
+
+      console.log('[PASTE] Paste operation completed successfully');
       return true;
     } catch (error: any) {
-      console.error('Failed to paste text:', error);
-      // Fallback: at least copy to clipboard
+      console.error('[PASTE] Failed to paste text:', error);
+      console.error('[PASTE] Error stack:', error.stack);
+
+      // Fallback: at least text is in clipboard
       clipboard.writeText(text);
-      // Restore window even on error
+
+      // Restore window state even on error
       if (mainWindow) {
-        mainWindow.setOpacity(1);
-        mainWindow.setIgnoreMouseEvents(false);
+        console.log('[PASTE] Restoring window after error');
+        mainWindow.setAlwaysOnTop(true);
+        mainWindow.show();
       }
-      throw new Error('Failed to paste text automatically. Text copied to clipboard.');
+
+      throw new Error(`Failed to paste text automatically: ${error.message}. Text has been copied to clipboard - please paste manually.`);
     }
   });
 
@@ -412,6 +496,24 @@ function setupIPC(): void {
     }
   });
 
+  ipcMain.handle(IPC_CHANNELS.OPEN_SETUP_WINDOW, () => {
+    openSetupWindow();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOSE_SETUP_WINDOW, () => {
+    if (setupWindow) {
+      setupWindow.close();
+      setupWindow = null;
+    }
+    // Show main window after setup is complete
+    if (!isQuitting && mainWindow) {
+      mainWindow.setContentSize(280, 60, false);
+      lastRequestedWindowSize = { width: 280, height: 60 };
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => {
     isQuitting = true;
     app.quit();
@@ -440,6 +542,13 @@ function setupIPC(): void {
         }
       }, 180);
     }
+  });
+
+  // Move window by delta handler
+  ipcMain.handle(IPC_CHANNELS.MOVE_WINDOW, (_, { deltaX, deltaY }: { deltaX: number; deltaY: number }) => {
+    if (!mainWindow) return;
+    const [x, y] = mainWindow.getPosition();
+    mainWindow.setPosition(x + deltaX, y + deltaY);
   });
 
   // Get window bounds handler

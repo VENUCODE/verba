@@ -12,6 +12,10 @@ const DEFAULT_CONFIG: AppConfig = {
   responseFormat: 'text',
   language: undefined,
   temperature: 0,
+  // Silence detection defaults (enabled by default)
+  silenceDetectionEnabled: true,
+  silenceDurationMs: 3000,    // 3 seconds
+  silenceThreshold: 0.02,     // 2% of max audio level
 };
 
 export const HISTORY_STORAGE_KEY = 'voice-transcriber-history-v1';

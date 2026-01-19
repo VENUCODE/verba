@@ -9,6 +9,12 @@ export interface AppConfig {
   responseFormat?: ResponseFormat;
   language?: string;
   temperature?: number;
+  // Silence detection settings
+  silenceDetectionEnabled?: boolean;  // Enable auto-stop on silence
+  silenceDurationMs?: number;         // Silence duration threshold (ms)
+  silenceThreshold?: number;          // Audio level threshold (0-1)
+  // Auto-paste setting
+  autoPasteEnabled?: boolean;         // Enable auto-paste of transcribed text
 }
 
 export type WhisperModel = 'whisper-1' | 'gpt-4o-transcribe' | 'gpt-4o-mini-transcribe';
@@ -74,6 +80,9 @@ export const IPC_CHANNELS = {
   PANEL_SET_TAB: 'window:panelSetTab',
   HIDE_MAIN_WINDOW: 'window:hideMain',
   SET_DRAG_STATE: 'window:setDragState',
+  MOVE_WINDOW: 'window:move',
+  OPEN_SETUP_WINDOW: 'window:openSetup',
+  CLOSE_SETUP_WINDOW: 'window:closeSetup',
 } as const;
 
 
@@ -89,6 +98,12 @@ export const DEFAULT_CONFIG: AppConfig = {
   responseFormat: 'text',
   language: undefined,
   temperature: 0,
+  // Silence detection defaults (enabled by default)
+  silenceDetectionEnabled: true,
+  silenceDurationMs: 3000,    // 3 seconds
+  silenceThreshold: 0.02,     // 2% of max audio level
+  // Auto-paste enabled by default
+  autoPasteEnabled: true,
 };
 
 // Constants
