@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "Cross-platform voice-to-text transcriber using OpenAI Whisper",
   "main": "dist/main/main/index.js",
-  "author": "Voice Transcriber",
+  "author": {
+    "name": "Bhukya Yedukondalu Naik",
+    "email": "bhukya@hellotars.com"
+  },
   "license": "MIT",
   "scripts": {
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
