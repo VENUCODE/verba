@@ -48,7 +48,13 @@ function Setup() {
   return (
     <div className="h-full bg-gradient-to-br from-primary-50 to-surface-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-6">
-        <div className="text-center mb-8">
+        {/* Drag region for frameless window */}
+        <div 
+          className="absolute top-0 left-0 right-0 h-12 cursor-move"
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        />
+        
+        <div className="text-center mb-8 relative">
           <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <svg
               className="w-8 h-8 text-primary-600"

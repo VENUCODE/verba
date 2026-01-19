@@ -41,8 +41,8 @@ function createWindow(): BrowserWindow {
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
   
   mainWindow = new BrowserWindow({
-    width: 550,
-    height: 650,
+    width: 600,
+    height: 720,
     useContentSize: true,
     frame: false,
     transparent: true,
@@ -50,8 +50,8 @@ function createWindow(): BrowserWindow {
     alwaysOnTop: true,
     resizable: true,
     skipTaskbar: true,
-    x: Math.floor((screenWidth - 550) / 2),
-    y: Math.floor((screenHeight - 650) / 2),
+    x: Math.floor((screenWidth - 600) / 2),
+    y: Math.floor((screenHeight - 720) / 2),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -60,10 +60,14 @@ function createWindow(): BrowserWindow {
     icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
   });
-  lastRequestedWindowSize = { width: 550, height: 650 };
+  lastRequestedWindowSize = { width: 600, height: 720 };
 
-  // Keep window within screen bounds when moved
+  // Keep window within screen bounds when moved (only for compact mode)
   mainWindow.on('will-move', (event, newBounds) => {
+    // Don't constrain during setup (larger window)
+    const bounds = mainWindow?.getBounds();
+    if (!bounds || bounds.width > 300) return;
+    
     const { x, y, width, height } = newBounds;
     const maxX = screenWidth - width;
     const maxY = screenHeight - height;
@@ -92,10 +96,10 @@ function createWindow(): BrowserWindow {
     if (!config.startMinimized) {
       // Resize for setup if needed
       if (isFirstLaunch || !config.apiKey) {
-        // Larger window for setup form (increased from 400x500 to 550x650)
-        mainWindow?.setContentSize(550, 650, false);
+        // Larger window for setup form - increased to 600x720 to show all content
+        mainWindow?.setContentSize(600, 720, false);
         mainWindow?.center(); // Center the setup window
-        lastRequestedWindowSize = { width: 550, height: 650 };
+        lastRequestedWindowSize = { width: 600, height: 720 };
       } else {
         // Show a visible compact window (increased from 240x40 to 280x60 for better visibility)
         mainWindow?.setContentSize(280, 60, false);
@@ -118,6 +122,12 @@ function createWindow(): BrowserWindow {
       return;
     }
     const { width, height } = mainWindow.getContentBounds();
+    
+    // Don't force resize during setup (allow natural sizing)
+    if (width > 300 && height > 300) {
+      return;
+    }
+    
     const widthDiff = Math.abs(width - lastRequestedWindowSize.width);
     const heightDiff = Math.abs(height - lastRequestedWindowSize.height);
     if (widthDiff > 2 || heightDiff > 2) {
