@@ -41,8 +41,8 @@ function createWindow(): BrowserWindow {
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
   
   mainWindow = new BrowserWindow({
-    width: 240,
-    height: 40,
+    width: 550,
+    height: 650,
     useContentSize: true,
     frame: false,
     transparent: true,
@@ -50,8 +50,8 @@ function createWindow(): BrowserWindow {
     alwaysOnTop: true,
     resizable: true,
     skipTaskbar: true,
-    x: Math.floor((screenWidth - 240) / 2),
-    y: 20,
+    x: Math.floor((screenWidth - 550) / 2),
+    y: Math.floor((screenHeight - 650) / 2),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -60,7 +60,7 @@ function createWindow(): BrowserWindow {
     icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
   });
-  lastRequestedWindowSize = { width: 240, height: 40 };
+  lastRequestedWindowSize = { width: 550, height: 650 };
 
   // Keep window within screen bounds when moved
   mainWindow.on('will-move', (event, newBounds) => {
@@ -82,21 +82,27 @@ function createWindow(): BrowserWindow {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
   }
 
   mainWindow.once('ready-to-show', () => {
     const config = store.get('config');
+    const isFirstLaunch = store.get('isFirstLaunch');
+    
     if (!config.startMinimized) {
       // Resize for setup if needed
-      if (store.get('isFirstLaunch') || !config.apiKey) {
-        mainWindow?.setContentSize(400, 500, false);
-        lastRequestedWindowSize = { width: 400, height: 500 };
+      if (isFirstLaunch || !config.apiKey) {
+        // Larger window for setup form (increased from 400x500 to 550x650)
+        mainWindow?.setContentSize(550, 650, false);
+        mainWindow?.center(); // Center the setup window
+        lastRequestedWindowSize = { width: 550, height: 650 };
       } else {
-        mainWindow?.setContentSize(240, 40, false);
-        lastRequestedWindowSize = { width: 240, height: 40 };
+        // Show a visible compact window (increased from 240x40 to 280x60 for better visibility)
+        mainWindow?.setContentSize(280, 60, false);
+        lastRequestedWindowSize = { width: 280, height: 60 };
       }
       mainWindow?.show();
+      mainWindow?.focus();
     }
   });
 
@@ -199,7 +205,7 @@ function openPanelWindow(initialTab: 'settings' | 'history' = 'settings') {
     if (isDev) {
       await panelWindow.loadURL(`http://localhost:5173/?view=panel&tab=${initialTab}`);
     } else {
-      await panelWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
+      await panelWindow.loadFile(path.join(__dirname, '../../renderer/index.html'), {
         query: { view: 'panel', tab: initialTab },
       });
     }
@@ -505,8 +511,19 @@ app.whenReady().then(() => {
   // Create tray
   createTray(
     () => {
-      mainWindow?.show();
-      mainWindow?.focus();
+      if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+        // Center window if it's too small or not visible
+        const bounds = mainWindow.getBounds();
+        if (bounds.width < 200 || bounds.height < 50) {
+          mainWindow.setContentSize(280, 60);
+          mainWindow.center();
+        }
+        // Flash the frame to draw attention
+        mainWindow.flashFrame(true);
+        setTimeout(() => mainWindow?.flashFrame(false), 1000);
+      }
     },
     () => {
       isQuitting = true;

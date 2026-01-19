@@ -102,6 +102,14 @@ function CompactBar({
         await handleTranscribe(audioBlob);
       }
     } else {
+      // Check if API key is configured before starting
+      if (!config.apiKey) {
+        soundManager.playNotification();
+        setError('Please configure your OpenAI API key in settings');
+        setTimeout(() => setError(null), 3000);
+        return;
+      }
+
       // Check if cursor is in active input before starting
       try {
         const hasActiveInput = await window.electronAPI.checkActiveInput();
@@ -121,7 +129,7 @@ function CompactBar({
       setStatus('recording');
       await startRecording();
     }
-  }, [isRecording, startRecording, stopRecording, handleTranscribe, setStatus, setError]);
+  }, [isRecording, startRecording, stopRecording, handleTranscribe, setStatus, setError, config.apiKey]);
 
   const handleStopRecording = useCallback(async () => {
     if (!isRecording) {
