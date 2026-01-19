@@ -1,7 +1,7 @@
 {
-  "name": "voice-transcriber",
+  "name": "verba",
   "version": "1.0.0",
-  "description": "Cross-platform voice-to-text transcriber using OpenAI Whisper",
+  "description": "Verba is a cross-platform voice-to-text transcriber using OpenAI Whisper",
   "main": "dist/main/main/index.js",
   "author": {
     "name": "Bhukya Yedukondalu Naik",
@@ -46,8 +46,8 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.voicetranscriber.app",
-    "productName": "Voice Transcriber",
+    "appId": "verba.app",
+    "productName": "Verba",
     "directories": {
       "output": "release"
     },

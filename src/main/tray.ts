@@ -23,25 +23,14 @@ export function createTray(
   }
 
   tray = new Tray(icon);
-  tray.setToolTip('Voice Transcriber');
+  tray.setToolTip('Verba');
 
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Show App',
       click: onShow,
     },
-    {
-      label: 'Start Recording',
-      click: () => {
-        // This will be handled by renderer
-        onShow();
-      },
-    },
     { type: 'separator' },
-    {
-      label: 'Settings',
-      click: onShow,
-    },
     { type: 'separator' },
     {
       label: 'Quit',

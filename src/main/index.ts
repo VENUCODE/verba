@@ -12,7 +12,7 @@ const store = new Store<{ config: AppConfig; isFirstLaunch: boolean }>({
     config: DEFAULT_CONFIG,
     isFirstLaunch: true,
   },
-  encryptionKey: 'voice-transcriber-secure-key',
+  encryptionKey: 'verba-secure-key',
 });
 
 let mainWindow: BrowserWindow | null = null;
