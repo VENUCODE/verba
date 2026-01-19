@@ -98,7 +98,7 @@ body,
   animation: glow-red 2s ease-in-out infinite;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - Default (for CompactBar) */
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -114,6 +114,26 @@ body,
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* Modern minimal scrollbar for PanelWindow */
+.panel-scrollbar::-webkit-scrollbar {
+  width: 7px;
+}
+
+.panel-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+}
+
+.panel-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.panel-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* Disable text selection on buttons */

@@ -134,9 +134,20 @@ function openPanelWindow(initialTab: 'settings' | 'history' = 'settings') {
     return panelWindow;
   }
 
+  const PANEL_CONSTRAINTS = {
+    MIN_WIDTH: 520,
+    MIN_HEIGHT: 450,
+    MAX_WIDTH: 1024,
+    MAX_HEIGHT: 900,
+  };
+
   panelWindow = new BrowserWindow({
-    width: 460,
+    width: 520,
     height: 560,
+    minWidth: PANEL_CONSTRAINTS.MIN_WIDTH,
+    minHeight: PANEL_CONSTRAINTS.MIN_HEIGHT,
+    maxWidth: PANEL_CONSTRAINTS.MAX_WIDTH,
+    maxHeight: PANEL_CONSTRAINTS.MAX_HEIGHT,
     useContentSize: true,
     frame: false,
     transparent: false,
@@ -151,6 +162,37 @@ function openPanelWindow(initialTab: 'settings' | 'history' = 'settings') {
     },
     show: false,
   });
+
+  // Enforce constraints during resize to prevent edge cases where min/max might not apply
+  panelWindow.on('will-resize', (event, newBounds) => {
+    const { width, height } = newBounds;
+
+    // Check if dimensions are within constraints
+    if (
+      width < PANEL_CONSTRAINTS.MIN_WIDTH ||
+      width > PANEL_CONSTRAINTS.MAX_WIDTH ||
+      height < PANEL_CONSTRAINTS.MIN_HEIGHT ||
+      height > PANEL_CONSTRAINTS.MAX_HEIGHT
+    ) {
+      event.preventDefault();
+
+      // Constrain to valid range
+      const constrainedWidth = Math.max(
+        PANEL_CONSTRAINTS.MIN_WIDTH,
+        Math.min(width, PANEL_CONSTRAINTS.MAX_WIDTH)
+      );
+      const constrainedHeight = Math.max(
+        PANEL_CONSTRAINTS.MIN_HEIGHT,
+        Math.min(height, PANEL_CONSTRAINTS.MAX_HEIGHT)
+      );
+
+      // Apply constrained size
+      panelWindow?.setContentSize(constrainedWidth, constrainedHeight, false);
+    }
+  });
+
+  // Note: setAspectRatio() removed as it causes resize issues on Windows/Linux
+  // The min/max dimensions and will-resize handler ensure the panel stays usable
 
   const loadPanel = async () => {
     if (!panelWindow) return;

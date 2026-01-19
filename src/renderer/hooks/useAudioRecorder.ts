@@ -36,14 +36,18 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const dataRequestIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
   const maxDurationReachedRef = useRef(false);
 
-  // Clear timer on unmount
+  // Clear timers on unmount
   useEffect(() => {
     return () => {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
+      }
+      if (dataRequestIntervalRef.current) {
+        clearInterval(dataRequestIntervalRef.current);
       }
     };
   }, []);
@@ -141,10 +145,14 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
         stream.getTracks().forEach((track) => track.stop());
         setAudioStream(null);
 
-        // Clear timer
+        // Clear timers
         if (timerIntervalRef.current) {
           clearInterval(timerIntervalRef.current);
           timerIntervalRef.current = null;
+        }
+        if (dataRequestIntervalRef.current) {
+          clearInterval(dataRequestIntervalRef.current);
+          dataRequestIntervalRef.current = null;
         }
 
         // Set back to idle after processing
@@ -153,10 +161,17 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
         }, 100);
       };
 
-      // Start recording with timeslice for periodic ondataavailable events
-      mediaRecorder.start(1000); // Get data every second
+      // Start recording without timeslice to avoid Chromium 30-second limit bug
+      mediaRecorder.start();
       setStatus('recording');
       startTimeRef.current = Date.now();
+
+      // Request data periodically to get chunks for file size monitoring
+      dataRequestIntervalRef.current = setInterval(() => {
+        if (mediaRecorder.state === 'recording') {
+          mediaRecorder.requestData();
+        }
+      }, 1000);
 
       // Start duration timer
       timerIntervalRef.current = setInterval(() => {
@@ -165,6 +180,15 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
       }, 100);
     } catch (err) {
       console.error('Failed to start recording:', err);
+      // Clean up any intervals that may have been started before the error
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      if (dataRequestIntervalRef.current) {
+        clearInterval(dataRequestIntervalRef.current);
+        dataRequestIntervalRef.current = null;
+      }
       const parsedError = parseTranscriptionError(err);
       setError(parsedError.userMessage);
       setStatus('idle');
@@ -180,18 +204,20 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
         return;
       }
 
-      // Clear timer
+      // Clear timers
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
       }
+      if (dataRequestIntervalRef.current) {
+        clearInterval(dataRequestIntervalRef.current);
+        dataRequestIntervalRef.current = null;
+      }
 
-      // Wait for the onstop event to fire and process the blob
-      const originalOnStop = mediaRecorder.onstop;
-      mediaRecorder.onstop = (event) => {
-        if (originalOnStop) {
-          originalOnStop.call(mediaRecorder, event);
-        }
+      // Create a one-time listener to resolve the Promise without overwriting the original handler
+      const handleStop = () => {
+        // Remove the listener after it fires
+        mediaRecorder.removeEventListener('stop', handleStop);
         // Return the blob after a short delay to ensure state is updated
         setTimeout(() => {
           const recordedMimeType = mediaRecorder.mimeType || 'audio/webm;codecs=opus';
@@ -200,6 +226,7 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
         }, 50);
       };
 
+      mediaRecorder.addEventListener('stop', handleStop);
       mediaRecorder.stop();
     });
   }, [audioBlob]);
