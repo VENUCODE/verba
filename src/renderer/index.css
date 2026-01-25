@@ -301,6 +301,22 @@ select:focus {
   }
 }
 
+/* Staggered icon float-up animation for initial bar expansion */
+@keyframes iconStaggerFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .fade-in {
   animation: fadeIn 0.3s ease-out forwards;
 }
@@ -311,6 +327,11 @@ select:focus {
 
 .animate-icon-float-up {
   animation: iconFloatUp 0.40s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  opacity: 0;
+}
+
+.animate-icon-stagger {
+  animation: iconStaggerFloat 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
   opacity: 0;
 }
 
@@ -359,28 +380,46 @@ button, .clickable {
     opacity: 1;
     transform: scale(1);
   }
+  40% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
   100% {
     opacity: 0;
-    transform: scale(1.05);
+    transform: scale(1.03);
   }
 }
 
 .animate-chip-morph {
-  animation: chipMorph 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: chipMorph 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 /* Bar appear animation - when expanding from chip */
 @keyframes barAppear {
   0% {
     opacity: 0;
-    transform: scale(0.95);
   }
   100% {
     opacity: 1;
-    transform: scale(1);
   }
 }
 
 .animate-bar-appear {
-  animation: barAppear 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: barAppear 0.6s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+
+/* Chip collapse animation - from expanded bar to chip */
+@keyframes chipCollapse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(0.98);
+  }
+}
+
+.animate-chip-collapse {
+  animation: chipCollapse 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }

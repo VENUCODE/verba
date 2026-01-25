@@ -7,7 +7,7 @@ export type RecordingStatus = 'idle' | 'recording' | 'processing';
 export interface AudioRecorderOptions {
   maxDuration?: number; // in seconds, default 120
   deviceId?: string | null; // specific audio input device
-  onMaxDurationReached?: () => void;
+  onMaxDurationReached?: (audioBlob: Blob) => void;
   // Silence detection options
   silenceDetectionEnabled?: boolean;
   silenceDurationMs?: number;
@@ -72,6 +72,9 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
   const consecutiveSpeechSamplesRef = useRef(0);      // Count of consecutive speech samples
   const consecutiveSilenceSamplesRef = useRef(0);     // Count of consecutive silence samples
 
+  // Ref to hold stopRecording function for use in effects before it's defined
+  const stopRecordingRef = useRef<(() => Promise<Blob | null>) | null>(null);
+
   // Clear timers and silence detection resources on unmount
   useEffect(() => {
     return () => {
@@ -94,8 +97,12 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
   useEffect(() => {
     if (status === 'recording' && duration >= maxDuration && !maxDurationReachedRef.current) {
       maxDurationReachedRef.current = true;
-      stopRecording();
-      onMaxDurationReached?.();
+      (async () => {
+        const audioBlob = await stopRecordingRef.current?.();
+        if (audioBlob) {
+          onMaxDurationReached?.(audioBlob);
+        }
+      })();
     }
   }, [duration, maxDuration, status, onMaxDurationReached]);
 
@@ -462,6 +469,11 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
       mediaRecorder.stop();
     });
   }, [audioBlob]);
+
+  // Keep the ref updated with the current stopRecording function
+  useEffect(() => {
+    stopRecordingRef.current = stopRecording;
+  }, [stopRecording]);
 
   return {
     startRecording,

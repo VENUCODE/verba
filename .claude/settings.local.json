@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(npm run build:*)",
+      "Bash(where:*)",
+      "Bash(npm install:*)",
+      "Bash(dir node_modules)",
+      "Bash(findstr:*)",
+      "Bash(ls:*)",
+      "Bash(npm --version:*)",
+      "Bash(node --version:*)",
+      "Bash(python backup_icons.py:*)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)"
+    ]
+  }
+}

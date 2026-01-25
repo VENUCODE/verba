@@ -9,11 +9,12 @@ interface CompactBarProps {
   onNavigate: (page: 'home' | 'settings' | 'history') => void;
   onExpand?: () => void;
   isCollapsed?: boolean;
-  expansionPhase?: 'collapsed' | 'morphing' | 'expanding' | 'expanded';
+  expansionPhase?: 'collapsed' | 'morphing' | 'expanding' | 'expanded' | 'collapsing';
   onInteraction?: () => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
   isHovering?: boolean;
+  onSetStopRecordingRef?: (handler: (() => Promise<void>) | null) => void;
 }
 
 function CompactBar({
@@ -25,6 +26,7 @@ function CompactBar({
   onDragStart,
   onDragEnd,
   isHovering = false,
+  onSetStopRecordingRef,
 }: CompactBarProps) {
   const { config, status, setStatus, setError, addToHistory, error } = useConfigStore();
   const [showIconsDuringRecording, setShowIconsDuringRecording] = useState(false);
@@ -36,6 +38,8 @@ function CompactBar({
   const transcriptionEndTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Ref for handling silence detection callback
   const handleSilenceStopRef = useRef<(() => void) | null>(null);
+  // Ref for handling max duration transcription
+  const handleMaxDurationTranscribeRef = useRef<((audioBlob: Blob) => Promise<void>) | null>(null);
 
   const {
     isRecording,
@@ -53,6 +57,11 @@ function CompactBar({
     onSilenceDetected: useCallback(() => {
       // Use the ref to call the current version of stop handler
       handleSilenceStopRef.current?.();
+    }, []),
+    onMaxDurationReached: useCallback(async (audioBlob: Blob) => {
+      // Play stop sound and trigger transcription with the blob from max duration
+      soundManager.playStop();
+      await handleMaxDurationTranscribeRef.current?.(audioBlob);
     }, []),
   });
 
@@ -181,6 +190,23 @@ function CompactBar({
   useEffect(() => {
     handleSilenceStopRef.current = handleStopRecording;
   }, [handleStopRecording]);
+
+  // Keep the ref updated with handleTranscribe for max duration callback
+  useEffect(() => {
+    handleMaxDurationTranscribeRef.current = handleTranscribe;
+  }, [handleTranscribe]);
+
+  // Expose the stop recording handler to the parent component via callback
+  useEffect(() => {
+    if (onSetStopRecordingRef) {
+      onSetStopRecordingRef(handleStopRecording);
+    }
+    return () => {
+      if (onSetStopRecordingRef) {
+        onSetStopRecordingRef(null);
+      }
+    };
+  }, [handleStopRecording, onSetStopRecordingRef]);
 
   // Listen for global hotkey
   useEffect(() => {
@@ -325,65 +351,138 @@ function CompactBar({
 
   const backgroundStyle = getBackgroundStyle();
 
-  if (isCollapsed) {
-    const isMorphing = expansionPhase === 'morphing';
+  // Render during morphing phase: chip visible with bar overlaying and fading in
+  const isMorphing = expansionPhase === 'morphing';
+
+  if (isCollapsed || isMorphing) {
+    // Use same background as CompactBar idle state for consistent morphing
+    const baseBackground = 'linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.88))';
+    const hoverBackground = 'linear-gradient(135deg, rgba(25, 35, 55, 0.94), rgba(40, 52, 70, 0.90))';
 
     return (
-      <div
-        className={`relative flex h-full w-full items-center justify-center rounded-2xl cursor-pointer overflow-hidden
-          ${isMorphing ? 'animate-chip-morph' : 'transition-all duration-300'}`}
-        style={{
-          background: isMorphing
-            ? 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.9))'
-            : isHovering && !isMorphing
-              ? 'linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(51, 65, 85, 0.88))'
-              : 'linear-gradient(135deg, rgba(15, 23, 42, 0.88), rgba(30, 41, 59, 0.85))',
-          border: isHovering && !isMorphing
-            ? '1px solid rgba(148, 163, 184, 0.25)'
-            : '1px solid rgba(100, 116, 139, 0.15)',
-          backdropFilter: 'blur(24px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-          boxShadow: isHovering && !isMorphing
-            ? '0 2px 8px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
-            : '0 1px 6px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-          opacity: isMorphing ? 0 : 1,
-        }}
-        title="Click to expand or drag to move"
-      >
-        {/* Premium gradient overlay with animated shimmer */}
+      <div className="relative flex h-full w-full items-center justify-center">
+        {/* Chip layer - stays visible during morphing */}
         <div
-          className="absolute inset-0 rounded-2xl pointer-events-none"
+          className={`absolute inset-0 flex items-center justify-center rounded-2xl cursor-pointer overflow-hidden
+            ${!isMorphing ? 'transition-all duration-500 ease-out' : ''}`}
           style={{
-            background: 'linear-gradient(135deg, rgba(96, 165, 250, 0.15), rgba(168, 85, 247, 0.12), rgba(236, 72, 153, 0.1))',
-            opacity: isHovering && !isMorphing ? 0.6 : 0.4,
-            transition: 'opacity 300ms ease-in-out',
+            background: isMorphing ? baseBackground : isHovering ? hoverBackground : baseBackground,
+            border: `1px solid ${isHovering && !isMorphing ? 'rgba(148, 163, 184, 0.25)' : 'rgba(100, 116, 139, 0.2)'}`,
+            backdropFilter: 'blur(28px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+            boxShadow: isHovering && !isMorphing
+              ? '0 2px 8px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+              : '0 2px 8px rgba(0, 0, 0, 0.3), 0 1px 4px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+            transition: isMorphing ? 'none' : 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+            opacity: isMorphing ? 1 : 1,
           }}
-        />
-
-        {/* Subtle inner glow effect on hover */}
-        {isHovering && !isMorphing && (
+          title="Click to expand or drag to move"
+        >
+          {/* Top highlight edge - matches CompactBar */}
           <div
-            className="absolute inset-0 rounded-2xl animate-hover-glow pointer-events-none"
+            className="absolute top-0 left-0 right-0 h-px pointer-events-none z-20"
             style={{
-              boxShadow: 'inset 0 0 24px rgba(96, 165, 250, 0.12), inset 0 0 48px rgba(168, 85, 247, 0.08)',
+              background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15) 20%, rgba(255, 255, 255, 0.15) 80%, transparent)',
             }}
           />
-        )}
 
-        {/* Content fades out during morph */}
-        <div
-          className={`relative z-10 flex w-full items-center justify-center px-4 transition-opacity duration-300 ${isMorphing ? 'opacity-0' : ''}`}
-        >
-          <div className="h-1.5 w-24 rounded-full bg-gradient-to-r from-blue-400/60 via-purple-400/60 to-pink-400/60 shadow-lg"></div>
+          {/* Premium gradient overlay - matches CompactBar idle state */}
+          <div
+            className="absolute inset-0 rounded-2xl pointer-events-none"
+            style={{
+              background: 'linear-gradient(135deg, rgba(96, 165, 250, 0.08), rgba(168, 85, 247, 0.06), rgba(236, 72, 153, 0.04))',
+              opacity: isHovering && !isMorphing ? 0.7 : 0.5,
+              transition: 'opacity 400ms ease-in-out',
+            }}
+          />
+
+          {/* Subtle inner glow effect on hover */}
+          {isHovering && !isMorphing && (
+            <div
+              className="absolute inset-0 rounded-2xl animate-hover-glow pointer-events-none"
+              style={{
+                boxShadow: 'inset 0 0 24px rgba(96, 165, 250, 0.12), inset 0 0 48px rgba(168, 85, 247, 0.08)',
+              }}
+            />
+          )}
+
+          {/* Content fades out during morph */}
+          <div
+            className={`relative z-10 flex w-full items-center justify-center px-4 transition-all duration-400 ${isMorphing ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}
+          >
+            <div className="h-1.5 w-24 rounded-full bg-gradient-to-r from-blue-400/60 via-purple-400/60 to-pink-400/60 shadow-lg"></div>
+          </div>
         </div>
+
+        {/* Bar layer - overlays chip and fades in during morphing */}
+        {isMorphing && (
+          <div
+            className="absolute inset-0 flex w-full flex-col rounded-2xl overflow-hidden animate-bar-appear"
+            style={{
+              minWidth: '280px',
+              minHeight: '60px',
+              ...getBackgroundStyle(),
+              border: `1px solid ${getBackgroundStyle().borderColor}`,
+              backdropFilter: 'blur(28px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3), 0 1px 4px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+            }}
+          >
+            {/* Top highlight edge for premium glass effect */}
+            <div
+              className="absolute top-0 left-0 right-0 h-px pointer-events-none z-20"
+              style={{
+                background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15) 20%, rgba(255, 255, 255, 0.15) 80%, transparent)',
+              }}
+            />
+
+            {/* Subtle gradient overlay for idle state */}
+            <div
+              className="absolute inset-0 rounded-2xl pointer-events-none"
+              style={{
+                background: 'linear-gradient(135deg, rgba(96, 165, 250, 0.08), rgba(168, 85, 247, 0.06), rgba(236, 72, 153, 0.04))',
+                opacity: 0.5,
+              }}
+            />
+
+            {/* Main Bar content (simplified - no interactive elements during morph) */}
+            <div className="flex w-full items-center gap-3 px-4 py-2.5 min-h-[52px] overflow-visible relative z-10">
+              {/* Drag Handle */}
+              <div className="flex items-center justify-center w-7 h-7 flex-shrink-0 rounded-lg">
+                <GripVertical className="w-5 h-5 text-white/60 flex-shrink-0" />
+              </div>
+
+              {/* Center section with record button and visualizer placeholder */}
+              <div className="flex items-center gap-2 flex-1" style={{ minWidth: '140px' }}>
+                <button
+                  className="w-8 h-8 rounded-full flex items-center justify-center relative flex-shrink-0"
+                  style={{
+                    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
+                  }}
+                  disabled
+                >
+                  <div className="w-3 h-3 rounded-full bg-white shadow-sm relative z-10"></div>
+                </button>
+                <div className="flex items-center justify-center flex-1" style={{ height: '36px', minWidth: '100px' }}></div>
+              </div>
+
+              {/* Right side icons placeholder */}
+              <div className="flex items-center gap-1.5 flex-shrink-0" style={{ width: '100px' }}></div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
+  const isCollapsing = expansionPhase === 'collapsing';
+
   return (
     <div
       className={`flex w-full flex-col rounded-2xl overflow-hidden relative
-        ${expansionPhase === 'expanding' ? 'animate-bar-appear' : ''}`}
+        ${expansionPhase === 'expanding' ? 'animate-bar-appear' : ''}
+        ${isCollapsing ? 'animate-chip-collapse' : ''}`}
       style={{
         minWidth: '280px',
         minHeight: '60px',
@@ -446,7 +545,9 @@ function CompactBar({
 
         {/* 1. Drag Handle - Far Left */}
         <div
-          className="flex items-center justify-center w-7 h-7 flex-shrink-0 drag-region rounded-lg transition-all duration-200 hover:bg-white/15 active:bg-white/10"
+          className={`flex items-center justify-center w-7 h-7 flex-shrink-0 drag-region rounded-lg transition-all duration-200 hover:bg-white/15 active:bg-white/10
+            ${expansionPhase === 'expanding' ? 'animate-icon-stagger' : ''}`}
+          style={expansionPhase === 'expanding' ? { animationDelay: '0ms' } : undefined}
           title="Drag to move"
           onMouseDown={() => {
             onDragStart?.();
@@ -466,9 +567,14 @@ function CompactBar({
           {status === 'idle' && !isRecording ? (
             <button
               onClick={toggleRecording}
-              className="w-8 h-8 rounded-full flex items-center justify-center relative flex-shrink-0 cursor-pointer focus:outline-none transition-all duration-200 hover:scale-110 active:scale-95 group"
+              className={`w-8 h-8 rounded-full flex items-center justify-center relative flex-shrink-0 cursor-pointer focus:outline-none transition-all duration-200 hover:scale-110 active:scale-95 group
+                ${expansionPhase === 'expanding' ? 'animate-icon-stagger' : ''}`}
               title="Start recording"
-              style={{
+              style={expansionPhase === 'expanding' ? {
+                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
+                animationDelay: '80ms',
+              } : {
                 background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
                 boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
               }}
@@ -526,7 +632,10 @@ function CompactBar({
           )}
 
           {/* Waveform Visualizer */}
-          <div className="flex items-center justify-center flex-1" style={{ height: '36px', minWidth: '100px' }}>
+          <div
+            className={`flex items-center justify-center flex-1 ${expansionPhase === 'expanding' ? 'animate-icon-stagger' : ''}`}
+            style={expansionPhase === 'expanding' ? { height: '36px', minWidth: '100px', animationDelay: '160ms' } : { height: '36px', minWidth: '100px' }}
+          >
             <VerticalBarsVisualizer
               audioStream={isRecording ? audioStream : null}
               isRecording={isRecording}
@@ -556,9 +665,10 @@ function CompactBar({
               onClick={() => handlePanelToggle('settings')}
               className={`p-1.5 rounded-lg cursor-pointer flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:bg-white/15 active:bg-white/10 hover:scale-105 active:scale-95 group
                 ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}
-                ${!isRecording && previousStatus === 'transcribing' ? 'animate-icon-float-up' : ''}`}
+                ${!isRecording && previousStatus === 'transcribing' ? 'animate-icon-float-up' : ''}
+                ${expansionPhase === 'expanding' ? 'animate-icon-stagger' : ''}`}
               style={{
-                animationDelay: !isRecording && previousStatus === 'transcribing' ? '0ms' : undefined,
+                animationDelay: !isRecording && previousStatus === 'transcribing' ? '0ms' : expansionPhase === 'expanding' ? '240ms' : undefined,
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
               }}
               title="Open Panel"
@@ -579,9 +689,10 @@ function CompactBar({
               }}
               className={`p-1.5 rounded-lg cursor-pointer flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:bg-white/15 active:bg-white/10 hover:scale-105 active:scale-95 group
                 ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}
-                ${!isRecording && previousStatus === 'transcribing' ? 'animate-icon-float-up' : ''}`}
+                ${!isRecording && previousStatus === 'transcribing' ? 'animate-icon-float-up' : ''}
+                ${expansionPhase === 'expanding' ? 'animate-icon-stagger' : ''}`}
               style={{
-                animationDelay: !isRecording && previousStatus === 'transcribing' ? '200ms' : undefined,
+                animationDelay: !isRecording && previousStatus === 'transcribing' ? '200ms' : expansionPhase === 'expanding' ? '320ms' : undefined,
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
               }}
               title="Minimize to chip"
@@ -601,9 +712,10 @@ function CompactBar({
               }}
               className={`p-1.5 rounded-lg cursor-pointer flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:bg-red-500/20 active:bg-red-500/15 hover:scale-105 active:scale-95 group
                 ${showIconsDuringRecording && isRecording ? 'fade-in' : ''}
-                ${!isRecording && previousStatus === 'transcribing' ? 'animate-icon-float-up' : ''}`}
+                ${!isRecording && previousStatus === 'transcribing' ? 'animate-icon-float-up' : ''}
+                ${expansionPhase === 'expanding' ? 'animate-icon-stagger' : ''}`}
               style={{
-                animationDelay: !isRecording && previousStatus === 'transcribing' ? '400ms' : undefined,
+                animationDelay: !isRecording && previousStatus === 'transcribing' ? '400ms' : expansionPhase === 'expanding' ? '400ms' : undefined,
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
               }}
               title="Hide to tray"

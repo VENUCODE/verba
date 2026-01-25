@@ -1,28 +1,35 @@
-import { Tray, Menu, nativeImage, NativeImage } from 'electron';
+import { Tray, Menu, nativeImage, NativeImage, app } from 'electron';
 import * as path from 'path';
 
 let tray: Tray | null = null;
+let normalIcon: NativeImage | null = null;
+
+function loadVerbaIcon(): NativeImage {
+  // Use app.getAppPath() for reliable path resolution in both dev and packaged builds
+  const iconPath = path.join(app.getAppPath(), 'assets/verba_png.png');
+
+  try {
+    const icon = nativeImage.createFromPath(iconPath);
+    if (!icon.isEmpty()) {
+      // Resize to appropriate tray size (16x16 for Windows/Linux, will auto-scale on macOS)
+      return icon.resize({ width: 16, height: 16 });
+    }
+    console.warn('Tray icon empty, using fallback. Path:', iconPath);
+  } catch (error) {
+    console.error('Failed to load tray icon:', error);
+  }
+
+  return createDefaultIcon();
+}
 
 export function createTray(
   onShow: () => void,
   onQuit: () => void
 ): Tray {
-  // Load the wave-sound.png icon (16x16, perfect for tray)
-  const iconPath = path.join(__dirname, '../../assets/wave-sound.png');
-  let icon: NativeImage;
-  
-  try {
-    icon = nativeImage.createFromPath(iconPath);
-    if (icon.isEmpty()) {
-      console.warn('Tray icon not found, using fallback');
-      icon = createDefaultIcon();
-    }
-  } catch (error) {
-    console.error('Failed to load tray icon:', error);
-    icon = createDefaultIcon();
-  }
+  // Load and cache the normal icon
+  normalIcon = loadVerbaIcon();
 
-  tray = new Tray(icon);
+  tray = new Tray(normalIcon);
   tray.setToolTip('Verba');
 
   const contextMenu = Menu.buildFromTemplate([
@@ -90,8 +97,9 @@ function createDefaultIcon(): NativeImage {
 export function updateTrayIcon(isRecording: boolean): void {
   if (!tray) return;
 
-  const icon = isRecording ? createRecordingIcon() : createDefaultIcon();
-  tray.setImage(icon.resize({ width: 16, height: 16 }));
+  // Use the cached normal icon, or create recording icon
+  const icon = isRecording ? createRecordingIcon() : (normalIcon || loadVerbaIcon());
+  tray.setImage(icon);
 }
 
 function createRecordingIcon(): NativeImage {

@@ -21,7 +21,7 @@ function App() {
   
   const [isLoading, setIsLoading] = useState(true);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [expansionPhase, setExpansionPhase] = useState<'collapsed' | 'morphing' | 'expanding' | 'expanded'>('expanded');
+  const [expansionPhase, setExpansionPhase] = useState<'collapsed' | 'morphing' | 'expanding' | 'expanded' | 'collapsing'>('expanded');
   const [lastInteraction, setLastInteraction] = useState(Date.now());
   const [expandedDimensions, setExpandedDimensions] = useState({ width: EXPANDED_BASE_WIDTH, height: EXPANDED_BASE_HEIGHT });
   const [isChipHovering, setIsChipHovering] = useState(false);
@@ -34,6 +34,7 @@ function App() {
   const expansionTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
   const expandedDimensionsRef = useRef(expandedDimensions);
   const isCollapsedRef = useRef(isCollapsed);
+  const stopRecordingRef = useRef<(() => Promise<void>) | null>(null);
 
   const { forceResize, notifyDragStart, notifyDragEnd } = useWindowAutoSize(contentRef, {
     minWidth: EXPANDED_BASE_WIDTH,
@@ -76,16 +77,23 @@ function App() {
 
     const checkCollapse = () => {
       const timeSinceInteraction = Date.now() - lastInteraction;
-      // Only collapse when idle (not during recording or transcribing)
-      if (timeSinceInteraction > 60000 && !isCollapsed && status === 'idle') {
-        setIsCollapsed(true);
-        void window.electronAPI.resizeWindow(CHIP_WIDTH, CHIP_HEIGHT);
+      // Only collapse when idle (not during recording or transcribing) and not already collapsing
+      if (timeSinceInteraction > 60000 && !isCollapsed && status === 'idle' && expansionPhase === 'expanded') {
+        // Start collapsing animation
+        setExpansionPhase('collapsing');
+
+        // After animation, switch to chip
+        setTimeout(() => {
+          setIsCollapsed(true);
+          setExpansionPhase('collapsed');
+          void window.electronAPI.resizeWindow(CHIP_WIDTH, CHIP_HEIGHT);
+        }, 400);
       }
     };
 
     const interval = setInterval(checkCollapse, 1000);
     return () => clearInterval(interval);
-  }, [config.apiKey, isCollapsed, isFirstLaunch, lastInteraction, viewMode, status]);
+  }, [config.apiKey, isCollapsed, isFirstLaunch, lastInteraction, viewMode, status, expansionPhase]);
 
   // Track interactions
   useEffect(() => {
@@ -99,22 +107,27 @@ function App() {
       // Clear hover visual state
       setIsChipHovering(false);
 
-      // Phase 1 (0ms): Start morphing - chip grows and fades
+      // Phase 1 (0ms): Start morphing - chip fades while window starts resizing
       setExpansionPhase('morphing');
-      void window.electronAPI.resizeWindow(expandedDimensionsRef.current.width, expandedDimensionsRef.current.height);
 
-      // Phase 2 (400ms): Switch to compact bar content
+      // Delay window resize slightly for smoother visual transition
+      const resizeTimeout = setTimeout(() => {
+        void window.electronAPI.resizeWindow(expandedDimensionsRef.current.width, expandedDimensionsRef.current.height);
+      }, 100);
+      expansionTimeoutsRef.current.push(resizeTimeout);
+
+      // Phase 2 (500ms): Switch to compact bar content - overlap with morph fade
       const timeout1 = setTimeout(() => {
         setIsCollapsed(false);
         setExpansionPhase('expanding');
-      }, 400);
+      }, 500);
       expansionTimeoutsRef.current.push(timeout1);
 
-      // Phase 3 (900ms): Enable icon animations after bar appears
+      // Phase 3 (1100ms): Enable icon animations after bar fully appears
       const timeout2 = setTimeout(() => {
         setExpansionPhase('expanded');
         requestResize();
-      }, 900);
+      }, 1100);
       expansionTimeoutsRef.current.push(timeout2);
 
       hoverTimeoutRef.current = null;
@@ -330,9 +343,13 @@ function App() {
 
         // Validate dimensions before resizing
         if (expandedDimensionsRef.current.width > 0 && expandedDimensionsRef.current.height > 0) {
-          // Phase 1: Start morphing - chip grows and fades
+          // Phase 1: Start morphing - chip fades while window starts resizing
           setExpansionPhase('morphing');
-          void window.electronAPI.resizeWindow(expandedDimensionsRef.current.width, expandedDimensionsRef.current.height);
+
+          // Delay window resize slightly for smoother visual transition
+          setTimeout(() => {
+            void window.electronAPI.resizeWindow(expandedDimensionsRef.current.width, expandedDimensionsRef.current.height);
+          }, 100);
 
           // Phase 2: Switch to compact bar content
           const timeout1 = setTimeout(() => {
@@ -345,9 +362,9 @@ function App() {
               requestResize();
               // Trigger recording after expansion is complete
               window.dispatchEvent(new CustomEvent('hotkey-triggered'));
-            }, 500); // Wait for bar appearance animation
+            }, 600); // Wait for bar appearance animation
             expansionTimeoutsRef.current.push(timeout2);
-          }, 400); // Wait for morphing phase
+          }, 500); // Wait for morphing phase
           expansionTimeoutsRef.current.push(timeout1);
         }
       } else {
@@ -363,6 +380,15 @@ function App() {
 
   // Handle direct collapse (from minimize button)
   const handleCollapse = useCallback(async () => {
+    // Check if recording is active and stop it first
+    if (stopRecordingRef.current && status === 'recording') {
+      console.log('[App] Stopping recording before collapse');
+      await stopRecordingRef.current();
+      // Wait a bit for transcription to start before collapsing
+      // This ensures the audio is properly processed
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
     // Clear any pending hover-to-expand timer to prevent unexpected expansion
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
@@ -380,11 +406,18 @@ function App() {
       console.warn('Failed to get window bounds before collapse:', error);
     }
 
-    setIsCollapsed(true);
-    setExpansionPhase('collapsed');
+    // Phase 1: Start collapsing animation on the bar
+    setExpansionPhase('collapsing');
+
+    // Phase 2: After animation, switch to chip and resize window
+    setTimeout(() => {
+      setIsCollapsed(true);
+      setExpansionPhase('collapsed');
+      void window.electronAPI.resizeWindow(CHIP_WIDTH, CHIP_HEIGHT);
+    }, 400);
+
     setLastInteraction(Date.now());
-    void window.electronAPI.resizeWindow(CHIP_WIDTH, CHIP_HEIGHT);
-  }, []);
+  }, [status]);
 
   const handleOpenPanel = useCallback((panel: 'settings' | 'history') => {
     setLastInteraction(Date.now());
@@ -402,6 +435,10 @@ function App() {
     notifyDragEnd();
     window.electronAPI.setDragState(false);
   }, [notifyDragEnd]);
+
+  const handleSetStopRecordingRef = useCallback((handler: (() => Promise<void>) | null) => {
+    stopRecordingRef.current = handler;
+  }, []);
 
   const renderLoader = () => (
     <div className="flex items-center justify-center h-full bg-transparent">
@@ -442,6 +479,7 @@ function App() {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           isHovering={isChipHovering}
+          onSetStopRecordingRef={handleSetStopRecordingRef}
         />
       </div>
     </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useConfigStore } from '../store/configStore';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import RecordingIndicator from '../components/RecordingIndicator';
@@ -12,6 +12,9 @@ function Home({ onNavigate }: HomeProps) {
   const { config, status, setStatus, setError, addToHistory, error } = useConfigStore();
   const [audioLevel, setAudioLevel] = useState(0);
 
+  // Ref for handling max duration transcription
+  const handleMaxDurationTranscribeRef = useRef<((audioBlob: Blob) => Promise<void>) | null>(null);
+
   const {
     isRecording,
     duration,
@@ -20,7 +23,10 @@ function Home({ onNavigate }: HomeProps) {
     stopRecording,
   } = useAudioRecorder({
     maxDuration: config.maxDuration,
-    deviceId: config.selectedInputDevice
+    deviceId: config.selectedInputDevice,
+    onMaxDurationReached: useCallback(async (audioBlob: Blob) => {
+      await handleMaxDurationTranscribeRef.current?.(audioBlob);
+    }, []),
   });
 
   // Calculate audio level from stream for visualizer
@@ -99,6 +105,11 @@ function Home({ onNavigate }: HomeProps) {
       setStatus('idle');
     }
   }, [config.model, duration, setStatus, setError, addToHistory]);
+
+  // Keep the ref updated with handleTranscribe for max duration callback
+  useEffect(() => {
+    handleMaxDurationTranscribeRef.current = handleTranscribe;
+  }, [handleTranscribe]);
 
   const toggleRecording = useCallback(async () => {
     if (isRecording) {
